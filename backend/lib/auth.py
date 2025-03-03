@@ -13,7 +13,7 @@ resend.api_key = os.getenv('RESEND_API_KEY')
 
 class Auth:
     def __init__(self):
-        self.frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:5173')
+        self.frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:5174')
         self.max_attempts_per_hour = 5
 
     def get_or_create_user(self, email: str) -> int:

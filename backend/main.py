@@ -529,8 +529,8 @@ async def create_checkout_session(current_user: dict = Depends(get_current_user)
             )
         
         # Build success and cancel URLs
-        success_url = f"{os.getenv('FRONTEND_URL', 'http://localhost:5173')}/subscription/success?session_id={{CHECKOUT_SESSION_ID}}"
-        cancel_url = f"{os.getenv('FRONTEND_URL', 'http://localhost:5173')}/subscription/cancel"
+        success_url = f"{os.getenv('FRONTEND_URL', 'http://localhost:5174')}/subscription/success?session_id={{CHECKOUT_SESSION_ID}}"
+        cancel_url = f"{os.getenv('FRONTEND_URL', 'http://localhost:5174')}/subscription/cancel"
         
         # Create Stripe checkout session
         session = stripe.checkout.Session.create(

@@ -41,7 +41,7 @@ fi
 
 echo -e "${GREEN}All services started successfully!${NC}"
 echo -e "${BLUE}Backend running at:${NC} http://localhost:8001"
-echo -e "${BLUE}Frontend running at:${NC} http://localhost:5173"
+echo -e "${BLUE}Frontend running at:${NC} http://localhost:5174"
 
 # Keep script running
 wait 
