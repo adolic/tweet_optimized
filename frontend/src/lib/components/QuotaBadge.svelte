@@ -36,40 +36,59 @@
             refreshQuota();
         }
     });
+    
+    // Flag to track whether the popup is visible
+    let isPopupVisible = false;
+    
+    // Function to show the popup
+    const showPopup = () => {
+        isPopupVisible = true;
+    };
+    
+    // Function to hide the popup
+    const hidePopup = () => {
+        isPopupVisible = false;
+    };
 </script>
 
 <!-- Compact quota badge for header -->
 {#if quotaData && quotaData.quota && quotaData.quota.quota}
-    <div class="flex items-center gap-2">
-        <!-- Quota badge with popover -->
+    <div class="flex items-center gap-2 quota-container">
+        <!-- Quota badge -->
         <button 
-            use:popup={{ event: 'hover', target: 'quota-popup', placement: 'bottom' }}
             class="badge-quota {badgeColor}"
             on:click={refreshQuota}
+            on:mouseenter={showPopup}
             title="Click to refresh"
         >
             {quotaData.quota.quota.predictions_used} / {quotaData.quota.quota.predictions_limit}
         </button>
 
-        <!-- Popup with more details -->
-        <div class="card p-3 shadow-xl quota-popup" data-popup="quota-popup">
-            <div class="text-sm space-y-2">
-                <p class="font-semibold">Prediction Quota</p>
-                <div class="progress h-2 rounded-full">
-                    <div class={`progress-bar ${badgeColor} rounded-full`} 
-                         style={`width: ${Math.min(usagePercentage, 100)}%`}>
+        <!-- Popup with more details - visible based on hover state -->
+        {#if isPopupVisible}
+            <div 
+                class="card p-3 shadow-xl quota-popup"
+                on:mouseenter={showPopup}
+                on:mouseleave={hidePopup}
+            >
+                <div class="text-sm space-y-2">
+                    <p class="font-semibold">Prediction Quota</p>
+                    <div class="progress h-2 rounded-full">
+                        <div class={`progress-bar ${badgeColor} rounded-full`} 
+                             style={`width: ${Math.min(usagePercentage, 100)}%`}>
+                        </div>
                     </div>
-                </div>
-                <p class="text-xs">
-                    Resets on {formatResetDate(quotaData.quota.quota.period_end)}
-                </p>
-                {#if quotaData.stats.subscription}
                     <p class="text-xs">
-                        Plan: {quotaData.stats.subscription.plan_name}
+                        Resets on {formatResetDate(quotaData.quota.quota.period_end)}
                     </p>
-                {/if}
+                    {#if quotaData.stats.subscription}
+                        <p class="text-xs">
+                            Plan: {quotaData.stats.subscription.plan_name}
+                        </p>
+                    {/if}
+                </div>
             </div>
-        </div>
+        {/if}
     </div>
 {:else if isLoading}
     <div class="badge-quota bg-surface-300">
@@ -96,9 +115,17 @@
         filter: brightness(1.1);
     }
     
+    .quota-container {
+        position: relative;
+    }
+    
     .quota-popup {
+        position: absolute;
+        top: 100%;
+        left: 0;
         width: 200px;
         z-index: 100;
+        margin-top: 5px;
     }
     
     .spinner {
