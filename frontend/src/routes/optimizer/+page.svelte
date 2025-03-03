@@ -6,6 +6,7 @@
     import { user } from '$lib/stores/user';
     import { getModalStore } from '@skeletonlabs/skeleton';
     import LoginModal from '$lib/components/LoginModal.svelte';
+    import DisclaimerCard from '$lib/components/DisclaimerCard.svelte';
     
     // User inputs
     let followers: number = 0;
@@ -17,6 +18,7 @@
     let error: string | null = null;
     let copyFeedback: string | null = null;
     let copyFeedbackTimeout: ReturnType<typeof setTimeout> | null = null;
+    let showDisclaimer: boolean = true;
     
     // Quota information
     let quotaData: any = null;
@@ -641,6 +643,16 @@
         });
     }
 
+    function showDisclaimerModal() {
+        modalStore.trigger({
+            type: 'component',
+            component: {
+                ref: DisclaimerCard
+            },
+            title: 'Important Notes About Tweet Optimizer V1'
+        });
+    }
+
     // Initialize charts on mount
     onMount(async () => {
         // Initialize user store
@@ -694,7 +706,12 @@
             <div class="card p-6 shadow-xl mb-8">
                 <!-- Header with title and clear button -->
                 <div class="flex justify-between items-center mb-6">
-                    <h1 class="h1">Tweet Optimizer</h1>
+                    <div class="flex items-center gap-2">
+                        <h1 class="h1">Tweet Optimizer V1</h1>
+                        <button class="btn-icon variant-ghost text-warning-500 text-xl" on:click={showDisclaimerModal} title="View important notes about V1">
+                            ⚠️
+                        </button>
+                    </div>
                     {#if predictions.length > 0}
                         <button class="btn variant-filled-error" on:click={clearAllData}>
                             Clear All Data
