@@ -9,11 +9,15 @@ from pydantic import BaseModel
 from backend.model.models import Models
 from backend.config import DATA_DIR
 import pandas as pd
+import os
+from dotenv import load_dotenv
+import resend
 
 
 logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger(__name__)
 
+load_dotenv()
 app = FastAPI()
 # MODEL = Model.load(DATA_DIR / "model.pkl")
 MODEL = Models.load(["views", "likes", "retweets", "comments"])
@@ -27,6 +31,9 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["*"]
 )
+
+# Configure Resend API
+resend.api_key = os.getenv('RESEND_API_KEY')
 
 class LoginRequest(BaseModel):
     email: str
@@ -46,12 +53,24 @@ async def login(request: LoginRequest):
     try:
         auth = Auth()
         result = auth.create_login_attempt(request.email)
-        if "error" in result:
+        
+        # Check if result is a dictionary and contains an "error" key
+        if isinstance(result, dict) and "error" in result:
             raise HTTPException(status_code=400, detail=result["error"])
+        
+        # If result is not a dictionary or doesn't have expected format
+        if not isinstance(result, dict) or "success" not in result:
+            raise HTTPException(status_code=500, detail="Invalid response format from authentication service")
+            
         return result
+    except HTTPException:
+        # Re-raise HTTP exceptions as they are already formatted properly
+        raise
     except Exception as e:
-        logger.error(f"Error in login: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        error_traceback = traceback.format_exc()
+        logger.error(f"Error in login: {str(e)}\n{error_traceback}")
+        raise HTTPException(status_code=500, detail=str(e) or "An unknown error occurred")
 
 @app.post("/auth/verify")
 async def verify(request: VerifyRequest):
@@ -139,3 +158,31 @@ async def get_tweet_forecast(request: Request):
 
 class Ref:
     pass
+
+@app.get("/test-email")
+async def test_email(email: str):
+    """Test endpoint to verify Resend email functionality."""
+    try:
+        logger.info(f"Testing email to: {email}")
+        
+        # Check if Resend API key is set
+        api_key = resend.api_key
+        if not api_key:
+            logger.error("Resend API key is not set")
+            return {"error": "Resend API key is not configured"}
+            
+        # Send a test email
+        response = resend.Emails.send({
+            "from": "Tweet-Optimize Test <test@tweet-optimize.com>",
+            "to": [email],
+            "subject": "Test Email from Tweet-Optimize",
+            "html": "<h1>This is a test email</h1><p>If you receive this, the email service is working correctly.</p>"
+        })
+        
+        logger.info(f"Test email response: {response}")
+        return {"success": True, "message": "Test email sent", "response": response}
+    except Exception as e:
+        import traceback
+        error_traceback = traceback.format_exc()
+        logger.error(f"Error sending test email: {str(e)}\n{error_traceback}")
+        return {"error": f"Failed to send test email: {str(e)}"}

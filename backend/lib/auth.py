@@ -6,6 +6,7 @@ import resend
 import os
 from dotenv import load_dotenv
 from .database import db_query, db_query_one, db_execute
+import logging
 
 load_dotenv()
 resend.api_key = os.getenv('RESEND_API_KEY')
@@ -44,6 +45,8 @@ class Auth:
 
     def create_login_attempt(self, email: str) -> dict:
         """Create a new login attempt with magic link."""
+        logger = logging.getLogger(__name__)
+        
         # Check rate limit for emails
         is_limited, error_msg = self.check_email_rate_limit(email)
         if is_limited:
@@ -61,18 +64,28 @@ class Auth:
         # Send email
         try:
             magic_link = f"{self.frontend_url}/auth/verify/{magic_link_token}?email={email}"
-            resend.Emails.send({
-                "from": "LLM-Docs Auth <auth@llm-docs.com>",
+            logger.info(f"Sending login email to {email} with magic link: {magic_link}")
+            
+            # Log Resend API key status (masked for security)
+            api_key = resend.api_key
+            if api_key:
+                masked_key = api_key[:4] + "*" * (len(api_key) - 8) + api_key[-4:] if len(api_key) > 8 else "***"
+                logger.info(f"Resend API key is set: {masked_key}")
+            else:
+                logger.error("Resend API key is not set")
+            
+            response = resend.Emails.send({
+                "from": "Tweet-Optimize Auth <auth@tweet-optimize.com>",
                 "to": [email],
-                "subject": "Log in to LLM-Docs",
+                "subject": "Log in to Tweet-Optimize",
                 "html": f"""
-                    <h2>Login to LLM-Docs</h2>
+                    <h2>Login to Tweet-Optimize</h2>
                     <p>Click the button below to log in to your account. This link will expire in 1 hour.</p>
                     <p style="margin: 2em 0;">
                         <a href="{magic_link}" 
                            style="background-color: #5db1ef; color: white; padding: 12px 24px; 
                                   text-decoration: none; border-radius: 6px; display: inline-block;">
-                            Log in to LLM-Docs
+                            Log in to Tweet-Optimize
                         </a>
                     </p>
                     <p style="color: #666; font-size: 0.9em;">
@@ -81,8 +94,12 @@ class Auth:
                     </p>
                 """
             })
+            logger.info(f"Email sent successfully: {response}")
             return {"success": True, "message": "Login email sent"}
         except Exception as e:
+            import traceback
+            error_traceback = traceback.format_exc()
+            logger.error(f"Failed to send email: {str(e)}\n{error_traceback}")
             return {"error": f"Failed to send email: {str(e)}"}
 
     def verify_attempt(self, email: str, code: str = None, magic_link_token: str = None) -> dict:
