@@ -110,7 +110,6 @@ async def proxy_request(url: str):
 async def get_tweet_forecast(request: Request):
     try:
         data = await request.json()
-        print(data)
         # must be present, text, author_followers_count, is_blue_verified
         if not isinstance(data, dict) or 'text' not in data or not isinstance(data['text'], str) \
             or 'author_followers_count' not in data or not isinstance(data['author_followers_count'], (int, float)) \
@@ -127,7 +126,7 @@ async def get_tweet_forecast(request: Request):
             "text": text, 
             "author_followers_count": author_followers_count,
             "is_blue_verified": is_blue_verified
-        }, age_hours=[0.1] + list(range(1, 24)))
+        }, age_hours=[0.1] + list(range(1, 25)))
         
         return {
             "prediction": prediction,

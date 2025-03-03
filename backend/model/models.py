@@ -48,14 +48,22 @@ class Models:
     
 
 if __name__ == "__main__":
-    # models = Models(["views", "likes", "retweets", "comments"])
-    # models.train()
+    import sys
     import time
-    start_time = time.time()
-    loaded_models = Models.load(["views", "likes", "retweets", "comments"])
-    print(f"Time taken to load models: {time.time() - start_time} seconds")
-    start_time = time.time()
-    predictions = loaded_models.predict({"text": "Hello, world!", "author_followers_count": 100, "is_blue_verified": 1}, [0,1,2,3,4,5,6,7,8,9,10])
-    print(f"Time taken to predict: {time.time() - start_time} seconds")
-    print(predictions)
+    
+    # Simple command line argument parsing
+    if len(sys.argv) > 1 and sys.argv[1] == "train":
+        print("Starting model training...")
+        models = Models(["views", "likes", "retweets", "comments"])
+        models.train()
+        print("Model training complete!")
+    else:
+        # Default behavior - load and test prediction
+        start_time = time.time()
+        loaded_models = Models.load(["views", "likes", "retweets", "comments"])
+        print(f"Time taken to load models: {time.time() - start_time} seconds")
+        start_time = time.time()
+        predictions = loaded_models.predict({"text": "Hello, world!", "author_followers_count": 100, "is_blue_verified": 1}, [0,1,2,3,4,5,6,7,8,9,10])
+        print(f"Time taken to predict: {time.time() - start_time} seconds")
+        print(predictions)
     

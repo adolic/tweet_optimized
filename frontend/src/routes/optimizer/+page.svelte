@@ -12,6 +12,8 @@
     // UI state
     let isLoading: boolean = false;
     let error: string | null = null;
+    let copyFeedback: string | null = null;
+    let copyFeedbackTimeout: ReturnType<typeof setTimeout> | null = null;
     
     // Predictions storage
     let predictions: Array<{
@@ -21,6 +23,10 @@
         isVerified: boolean;
         prediction: any;
     }> = [];
+
+    // Local storage keys
+    const STORAGE_KEY_PREDICTIONS = 'tweet_optimizer_predictions';
+    const STORAGE_KEY_FORM = 'tweet_optimizer_form';
     
     // Chart instances
     let viewsChart: Chart | null = null;
@@ -30,6 +36,88 @@
     
     // API URL with fallback for development
     const API_URL = typeof env !== 'undefined' ? env.PUBLIC_API_URL : 'http://localhost:8000';
+
+    // Check if current form values match an existing prediction
+    function isDuplicatePrediction(): boolean {
+        return predictions.some(p => 
+            p.tweet.trim() === tweetText.trim() && 
+            p.followers === followers && 
+            p.isVerified === isVerified
+        );
+    }
+
+    // Load data from localStorage
+    function loadFromLocalStorage() {
+        if (typeof window === 'undefined') return; // SSR check
+        
+        try {
+            // Load predictions
+            const savedPredictions = localStorage.getItem(STORAGE_KEY_PREDICTIONS);
+            if (savedPredictions) {
+                predictions = JSON.parse(savedPredictions);
+            }
+            
+            // Load form values
+            const savedForm = localStorage.getItem(STORAGE_KEY_FORM);
+            if (savedForm) {
+                const formData = JSON.parse(savedForm);
+                followers = formData.followers || 0;
+                tweetText = formData.tweetText || '';
+                isVerified = formData.isVerified || false;
+            }
+        } catch (err) {
+            console.error('Error loading from localStorage:', err);
+        }
+    }
+    
+    // Save data to localStorage
+    function saveToLocalStorage() {
+        if (typeof window === 'undefined') return; // SSR check
+        
+        try {
+            // Save predictions
+            localStorage.setItem(STORAGE_KEY_PREDICTIONS, JSON.stringify(predictions));
+            
+            // Save form values
+            localStorage.setItem(STORAGE_KEY_FORM, JSON.stringify({
+                followers,
+                tweetText,
+                isVerified
+            }));
+        } catch (err) {
+            console.error('Error saving to localStorage:', err);
+        }
+    }
+    
+    // Clear all data and reset state
+    function clearAllData() {
+        if (!confirm('Are you sure you want to clear all predictions and form data?')) return;
+        
+        // Reset form
+        followers = 0;
+        tweetText = '';
+        isVerified = false;
+        
+        // Reset predictions
+        predictions = [];
+        
+        // Clear localStorage
+        if (typeof window !== 'undefined') {
+            localStorage.removeItem(STORAGE_KEY_PREDICTIONS);
+            localStorage.removeItem(STORAGE_KEY_FORM);
+        }
+        
+        // Clear charts
+        if (viewsChart) viewsChart.destroy();
+        if (likesChart) likesChart.destroy();
+        if (retweetsChart) retweetsChart.destroy();
+        if (commentsChart) commentsChart.destroy();
+        
+        viewsChart = null;
+        likesChart = null;
+        retweetsChart = null;
+        commentsChart = null;
+    }
 
     // Generate random colors for chart lines
     function getRandomColor() {
@@ -101,8 +189,12 @@
                             borderWidth: 1,
                             borderColor: 'rgba(255, 255, 255, 0.1)',
                             callbacks: {
+                                title: function(tooltipItems) {
+                                    return `Age: ${tooltipItems[0].label} hours`;
+                                },
                                 label: function(context) {
-                                    return `${context.dataset.label}: ${formatNumber(context.parsed.y)}`;
+                                    const metricName = title.split(' ')[1]; // Extract "Views", "Likes", etc.
+                                    return `${metricName}: ${formatNumber(context.parsed.y)}`;
                                 }
                             }
                         }
@@ -210,7 +302,8 @@
             // Use consistent colors for each prediction across all charts
             const hue = (index * 137.5) % 360; // Golden angle approximation for good color distribution
             const color = `hsl(${hue}, 85%, 60%)`;
-            const label = `${pred.tweet.substring(0, 15)}... (${pred.followers} followers)`;
+            // Simplified label - just the truncated tweet text without followers count
+            const label = `${pred.tweet.substring(0, 15)}...`;
             
             // Common dataset options
             const datasetOptions = {
@@ -281,6 +374,12 @@
             return;
         }
 
+        // Check for duplicates before proceeding
+        if (isDuplicatePrediction()) {
+            error = "This exact prediction already exists";
+            return;
+        }
+
         isLoading = true;
         error = null;
 
@@ -316,6 +415,9 @@
                 }
             ];
             
+            // Save to localStorage
+            saveToLocalStorage();
+            
             const firstPrediction = predictions.length === 1;
             
             // If this is the first prediction, fully re-initialize the charts
@@ -330,10 +432,7 @@
                 updateCharts();
             }
             
-            // Reset form
-            tweetText = '';
-            followers = 0;
-            isVerified = false;
+            // Don't reset form anymore - let users iterate
             
         } catch (err: unknown) {
             console.error('Prediction error:', err);
@@ -346,6 +445,7 @@
     // Remove a prediction and update charts
     function removePrediction(id: string) {
         predictions = predictions.filter(p => p.id !== id);
+        saveToLocalStorage();
         
         // If all predictions removed, destroy charts to avoid issues
         if (predictions.length === 0) {
@@ -373,12 +473,37 @@
         return Math.round(num).toString();
     }
     
+    // Copy tweet text to clipboard
+    function copyToClipboard(text: string) {
+        navigator.clipboard.writeText(text)
+            .then(() => {
+                // Clear any existing timeout
+                if (copyFeedbackTimeout) {
+                    clearTimeout(copyFeedbackTimeout);
+                }
+                
+                // Show feedback
+                copyFeedback = "Tweet copied to clipboard!";
+                
+                // Hide feedback after 2 seconds
+                copyFeedbackTimeout = setTimeout(() => {
+                    copyFeedback = null;
+                }, 2000);
+            })
+            .catch(err => {
+                console.error('Failed to copy text: ', err);
+            });
+    }
+    
     // Initialize charts on mount
     onMount(() => {
+        // Load data from localStorage first
+        loadFromLocalStorage();
+        
         // Use setTimeout to ensure DOM is fully rendered
         setTimeout(() => {
-            initializeCharts();
             if (predictions.length > 0) {
+                initializeCharts();
                 updateCharts();
             }
         }, 100);
@@ -394,7 +519,15 @@
 </script>
 
 <div class="p-4">
-    <h1 class="h1 mb-6">Tweet Optimizer</h1>
+    <!-- Header with title and clear button -->
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="h1">Tweet Optimizer</h1>
+        {#if predictions.length > 0}
+            <button class="btn variant-filled-error" on:click={clearAllData}>
+                Clear All Data
+            </button>
+        {/if}
+    </div>
     
     {#if predictions.length === 0}
         <!-- Empty state -->
@@ -458,146 +591,143 @@
             </div>
         </div>
     {:else}
-        <!-- Dashboard layout when there are predictions -->
-        <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
-            <!-- Left column: Form and Table -->
-            <div class="xl:col-span-1 space-y-6">
-                <!-- Prediction Form -->
-                <div class="card p-4">
-                    <h3 class="h4 mb-4">Create New Prediction</h3>
-                    <div class="space-y-4">
-                        <label class="label">
-                            <span>Account Followers</span>
-                            <input
-                                type="number"
-                                min="0"
-                                bind:value={followers}
-                                class="input improved-input"
-                                placeholder="Enter your follower count"
-                            />
-                        </label>
-                        
-                        <label class="label flex items-center justify-between">
-                            <span>Verified Account?</span>
-                            <input type="checkbox" bind:checked={isVerified} class="checkbox" />
-                        </label>
-                        
-                        <label class="label">
-                            <span>Tweet Text</span>
-                            <textarea
-                                bind:value={tweetText}
-                                class="textarea improved-textarea"
-                                rows="4"
-                                placeholder="Enter your tweet text here..."
-                            ></textarea>
-                        </label>
-                        
-                        {#if error}
-                            <div class="alert variant-filled-error p-3">
-                                <div class="flex items-center gap-2">
-                                    <span class="text-lg">⚠️</span>
-                                    <p>{error}</p>
+        <!-- New layout with form and charts on top, combined table below -->
+        <div class="flex flex-col gap-6">
+            <!-- Top section: Form and Charts -->
+            <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                <!-- Left column: Form -->
+                <div class="xl:col-span-1">
+                    <!-- Prediction Form -->
+                    <div class="card p-4">
+                        <h3 class="h4 mb-4">Create New Prediction</h3>
+                        <div class="space-y-4">
+                            <label class="label">
+                                <span>Account Followers</span>
+                                <input
+                                    type="number"
+                                    min="0"
+                                    bind:value={followers}
+                                    class="input improved-input"
+                                    placeholder="Enter your follower count"
+                                />
+                            </label>
+                            
+                            <label class="label flex items-center justify-between">
+                                <span>Verified Account?</span>
+                                <input type="checkbox" bind:checked={isVerified} class="checkbox" />
+                            </label>
+                            
+                            <label class="label">
+                                <span>Tweet Text</span>
+                                <textarea
+                                    bind:value={tweetText}
+                                    class="textarea improved-textarea"
+                                    rows="4"
+                                    placeholder="Enter your tweet text here..."
+                                ></textarea>
+                            </label>
+                            
+                            {#if error}
+                                <div class="alert variant-filled-error p-3">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-lg">⚠️</span>
+                                        <p>{error}</p>
+                                    </div>
                                 </div>
-                            </div>
-                        {/if}
-                        
-                        <button class="btn variant-filled-primary w-full" on:click={handlePredict} disabled={isLoading}>
-                            {#if isLoading}
-                                <div class="flex items-center justify-center">
-                                    <span class="spinner-border spinner-border-sm mr-2" role="status" aria-hidden="true"></span>
-                                    <span>Generating prediction...</span>
-                                </div>
-                            {:else}
-                                <span>Predict Reach</span>
                             {/if}
-                        </button>
+                            
+                            <button class="btn variant-filled-primary w-full" on:click={handlePredict} disabled={isLoading}>
+                                {#if isLoading}
+                                    <div class="flex items-center justify-center">
+                                        <span class="spinner-border spinner-border-sm mr-2" role="status" aria-hidden="true"></span>
+                                        <span>Generating prediction...</span>
+                                    </div>
+                                {:else}
+                                    <span>Predict Reach</span>
+                                {/if}
+                            </button>
+                        </div>
                     </div>
                 </div>
                 
-                <!-- Predictions table -->
-                <div class="card p-4">
-                    <h3 class="h4 mb-4">Saved Predictions</h3>
-                    <div class="table-container">
-                        <table class="table table-compact table-hover">
-                            <thead>
-                                <tr>
-                                    <th>Tweet</th>
-                                    <th>Followers</th>
-                                    <th>Verified</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {#each predictions as pred}
-                                    <tr>
-                                        <td title={pred.tweet}>
-                                            <div class="truncate max-w-[180px]">
-                                                {pred.tweet}
-                                            </div>
-                                        </td>
-                                        <td>{formatNumber(pred.followers)}</td>
-                                        <td>{pred.isVerified ? 'Yes' : 'No'}</td>
-                                        <td>
-                                            <button class="btn btn-sm variant-filled-error" on:click={() => removePrediction(pred.id)}>
-                                                X
-                                            </button>
-                                        </td>
-                                    </tr>
-                                {/each}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-                
-                <!-- Summary Stats -->
-                <div class="card p-4">
-                    <h3 class="h4 mb-4">24h Metrics</h3>
-                    <div class="table-container">
-                        <table class="table table-compact">
-                            <thead>
-                                <tr>
-                                    <th>Tweet</th>
-                                    <th>Views</th>
-                                    <th>Likes</th>
-                                    <th>RT</th>
-                                    <th>Comments</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {#each predictions as pred}
-                                    <tr>
-                                        <td title={pred.tweet}>
-                                            <div class="truncate max-w-[100px]">
-                                                {pred.tweet}
-                                            </div>
-                                        </td>
-                                        <td>{formatNumber(pred.prediction.views[pred.prediction.views.length - 1].value)}</td>
-                                        <td>{formatNumber(pred.prediction.likes[pred.prediction.likes.length - 1].value)}</td>
-                                        <td>{formatNumber(pred.prediction.retweets[pred.prediction.retweets.length - 1].value)}</td>
-                                        <td>{formatNumber(pred.prediction.comments[pred.prediction.comments.length - 1].value)}</td>
-                                    </tr>
-                                {/each}
-                            </tbody>
-                        </table>
+                <!-- Right column: Charts -->
+                <div class="xl:col-span-2">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="card p-4 chart-container">
+                            <canvas id="viewsChart"></canvas>
+                        </div>
+                        <div class="card p-4 chart-container">
+                            <canvas id="likesChart"></canvas>
+                        </div>
+                        <div class="card p-4 chart-container">
+                            <canvas id="retweetsChart"></canvas>
+                        </div>
+                        <div class="card p-4 chart-container">
+                            <canvas id="commentsChart"></canvas>
+                        </div>
                     </div>
                 </div>
             </div>
             
-            <!-- Right column: Charts -->
-            <div class="xl:col-span-2">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div class="card p-4 chart-container">
-                        <canvas id="viewsChart"></canvas>
+            <!-- Bottom section: Combined Table (full width) -->
+            <div class="card p-4">
+                <h3 class="h4 mb-4">Prediction Results</h3>
+                
+                {#if copyFeedback}
+                    <div class="copy-feedback">
+                        {copyFeedback}
                     </div>
-                    <div class="card p-4 chart-container">
-                        <canvas id="likesChart"></canvas>
-                    </div>
-                    <div class="card p-4 chart-container">
-                        <canvas id="retweetsChart"></canvas>
-                    </div>
-                    <div class="card p-4 chart-container">
-                        <canvas id="commentsChart"></canvas>
-                    </div>
+                {/if}
+                
+                <div class="table-container">
+                    <table class="table table-compact table-hover">
+                        <thead>
+                            <tr>
+                                <th>Tweet</th>
+                                <th>Followers</th>
+                                <th>Verified</th>
+                                <th>Views (24h)</th>
+                                <th>Likes (24h)</th>
+                                <th>Retweets (24h)</th>
+                                <th>Comments (24h)</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {#each predictions as pred}
+                                <tr>
+                                    <td title={pred.tweet}>
+                                        <div class="flex items-center gap-2">
+                                            <div class="truncate max-w-[150px]">
+                                                {pred.tweet}
+                                            </div>
+                                            <button 
+                                                class="btn-icon copy-btn" 
+                                                on:click={() => copyToClipboard(pred.tweet)}
+                                                title="Copy tweet text"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </td>
+                                    <td>{formatNumber(pred.followers)}</td>
+                                    <td>{pred.isVerified ? 'Yes' : 'No'}</td>
+                                    <td>{formatNumber(pred.prediction.views[pred.prediction.views.length - 1].value)}</td>
+                                    <td>{formatNumber(pred.prediction.likes[pred.prediction.likes.length - 1].value)}</td>
+                                    <td>{formatNumber(pred.prediction.retweets[pred.prediction.retweets.length - 1].value)}</td>
+                                    <td>{formatNumber(pred.prediction.comments[pred.prediction.comments.length - 1].value)}</td>
+                                    <td>
+                                        <button class="btn btn-sm variant-filled-error" on:click={() => removePrediction(pred.id)}>
+                                            X
+                                        </button>
+                                    </td>
+                                </tr>
+                            {/each}
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
@@ -628,8 +758,22 @@
     }
     .table-container {
         overflow-x: auto;
-        max-height: 300px;
+        max-height: 400px;
         overflow-y: auto;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255, 255, 255, 0.2) rgba(0, 0, 0, 0.1);
+    }
+    .table-container::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+    }
+    .table-container::-webkit-scrollbar-track {
+        background-color: rgba(0, 0, 0, 0.1);
+        border-radius: 3px;
+    }
+    .table-container::-webkit-scrollbar-thumb {
+        background-color: rgba(255, 255, 255, 0.2);
+        border-radius: 3px;
     }
     .chart-container {
         height: 300px;
@@ -683,11 +827,66 @@
     :global(.table th) {
         background-color: rgba(80, 90, 170, 0.2) !important;
         color: rgba(255, 255, 255, 0.9) !important;
+        font-weight: 600 !important;
+        white-space: nowrap;
+        padding: 0.75rem 1rem !important;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+    }
+    :global(.table td) {
+        padding: 0.5rem 1rem !important;
+        vertical-align: middle !important;
     }
     :global(.table tr:nth-child(even)) {
         background-color: rgba(100, 110, 190, 0.08) !important;
     }
     :global(.table tr:hover) {
         background-color: rgba(100, 110, 190, 0.15) !important;
+    }
+    .copy-btn {
+        opacity: 0.6;
+        transition: all 0.2s ease;
+        padding: 4px;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-color: rgba(255, 255, 255, 0.1);
+        color: rgba(255, 255, 255, 0.9);
+    }
+    
+    .copy-btn:hover {
+        opacity: 1;
+        background-color: rgba(255, 255, 255, 0.2);
+        transform: scale(1.1);
+    }
+    
+    .copy-feedback {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background-color: rgba(70, 130, 180, 0.9);
+        color: white;
+        padding: 8px 16px;
+        border-radius: 4px;
+        z-index: 100;
+        animation: fadeIn 0.3s, fadeOut 0.3s 1.7s;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+    
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    
+    @keyframes fadeOut {
+        from { opacity: 1; transform: translateY(0); }
+        to { opacity: 0; transform: translateY(10px); }
+    }
+    
+    .btn-icon {
+        cursor: pointer;
+        border: none;
     }
 </style> 
