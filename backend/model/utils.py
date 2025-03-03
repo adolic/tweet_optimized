@@ -153,7 +153,7 @@ def evaluate(directory, model, X_test, y_test, y_train):
 
 
 
-def plot_feature_importance(directory, model, features, tfidf):
+def plot_feature_importance(directory, model, features, transformer):
     # Check if model is a Pipeline or a direct regressor
     if hasattr(model, 'named_steps'):
         # It's a Pipeline
@@ -167,20 +167,11 @@ def plot_feature_importance(directory, model, features, tfidf):
     # Create a mapping of feature names to more readable names
     feature_names = []
     for feature in features:
-        if feature.startswith('text_'):
-            # Get the actual word this feature represents from the TF-IDF vectorizer
-            feature_idx = int(feature.split('_')[1])
-            if hasattr(tfidf, 'get_feature_names_out'):
-                # For newer scikit-learn versions
-                all_feature_names = tfidf.get_feature_names_out()
-            else:
-                # For older scikit-learn versions
-                all_feature_names = tfidf.get_feature_names()
-            
-            if feature_idx < len(all_feature_names):
-                feature_names.append(f"text: {all_feature_names[feature_idx]}")
-            else:
-                feature_names.append(feature)
+        if feature.startswith('text_emb_'):
+            # For sentence transformer embeddings, we use a simplified naming convention
+            # since we don't have direct mapping to words
+            feature_idx = int(feature.split('_')[-1])
+            feature_names.append(f"embedding_{feature_idx}")
         else:
             feature_names.append(feature)
 
@@ -204,7 +195,7 @@ def plot_feature_importance(directory, model, features, tfidf):
 
 
 
-def get_shap(directory, model, X_test, tfidf):
+def get_shap(directory, model, X_test, transformer):
     import shap
 
     # Create a SHAP explainer for the model
@@ -222,23 +213,14 @@ def get_shap(directory, model, X_test, tfidf):
     X_test_array = X_test.values
     shap_values = explainer.shap_values(X_test_array)
 
-    # Create a mapping from feature index to actual text terms
+    # Create a mapping from feature index to feature names
+    # For transformer embeddings, we use a simplified naming scheme
     text_feature_names = []
     for col in X_test.columns:
-        if col.startswith('text_'):
-            # Get the actual word this feature represents from the TF-IDF vectorizer
-            feature_idx = int(col.split('_')[1])
-            if hasattr(tfidf, 'get_feature_names_out'):
-                # For newer scikit-learn versions
-                all_feature_names = tfidf.get_feature_names_out()
-            else:
-                # For older scikit-learn versions
-                all_feature_names = tfidf.get_feature_names()
-            
-            if feature_idx < len(all_feature_names):
-                text_feature_names.append(f"text: {all_feature_names[feature_idx]}")
-            else:
-                text_feature_names.append(col)
+        if col.startswith('text_emb_'):
+            # For sentence transformer embeddings, use a simplified naming
+            embedding_idx = int(col.split('_')[-1])
+            text_feature_names.append(f"embedding_{embedding_idx}")
         else:
             text_feature_names.append(col)
     
@@ -276,20 +258,32 @@ def get_shap(directory, model, X_test, tfidf):
 
 
 def compare_predictions(model_instance, loaded_model, X_test, df):
-    # COMPARISON: Direct predictions vs Save/Load + Dict predictions
-    print("\n" + "="*50)
-    print("COMPARING PREDICTIONS: DIRECT VS SAVE/LOAD + DICT")
-    print("="*50)
-
-    # 1. Get predictions directly from the trained model on DataFrame
-    print("\nGetting predictions directly from trained model...")
-    # Use a subset of test data for comparison (5 examples)
-    test_subset = X_test.iloc[:5].copy()
+    """
+    Compare predictions from the original model and the loaded model.
+    
+    Args:
+        model_instance: Original model instance
+        loaded_model: Loaded model instance from file
+        X_test: Test set used with original model
+        df: Original complete dataframe
+    """
+    print("\n" + "=" * 50)
+    print("COMPARING ORIGINAL MODEL VS LOADED MODEL PREDICTIONS")
+    print("=" * 50)
+    
+    # 1. Select a subset of the test set
+    test_subset = X_test.sample(min(10, len(X_test)), random_state=42)
+    
+    # 2. Get predictions from original model
+    print("\nGetting predictions from original model...")
     direct_predictions = model_instance.predict(test_subset)
-    print(f"Direct predictions (DataFrame): {direct_predictions}")
-
-    # 3. Convert test subset to list of dictionaries for prediction
-    # We need to get the raw data with 'text' from the original dataframe
+    
+    # 3. Get predictions from loaded model on same data
+    print("\nGetting predictions from loaded model using the same DataFrame...")
+    loaded_predictions = loaded_model.predict(test_subset)
+    
+    # 4. Prepare individual dictionaries for each test sample
+    print("\nPreparing test dictionaries...")
     test_dicts = []
     for idx in test_subset.index:
         # Get the corresponding row from the original data

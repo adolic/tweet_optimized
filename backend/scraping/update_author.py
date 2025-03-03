@@ -183,7 +183,7 @@ async def main():
         }
         
         print("Launching browser...")
-        browser = await playwright.chromium.launch(headless=False)
+        browser = await playwright.chromium.launch(headless=True)
         context = await browser.new_context(**browser_context_options)
         print("Browser launched successfully")
         
