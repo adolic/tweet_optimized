@@ -9,7 +9,7 @@
     let error: string | null = null;
 
     async function verifyToken(token: string, email: string) {
-        const response = await fetch(`${env.PUBLIC_API_URL}/auth/verify`, {
+        const response = await fetch(`/api/auth/verify`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

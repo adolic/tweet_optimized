@@ -50,9 +50,9 @@ function createUserStore() {
             }
             
             try {
-                console.log("[UserStore] Fetching user data from", `${PUBLIC_API_URL}/auth/me`);
+                console.log("[UserStore] Fetching user data from", `/api/auth/me`);
                 // Fetch user data using the token
-                const response = await fetch(`${PUBLIC_API_URL}/auth/me`, {
+                const response = await fetch(`/api/auth/me`, {
                     headers: {
                         'Authorization': `Bearer ${token}`
                     }
