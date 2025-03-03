@@ -32,32 +32,9 @@ onMount(() => {
                 </div>
             </svelte:fragment>
             <svelte:fragment slot="trail">
-                <a href="/" class="btn variant-ghost">Home</a>
-
                 <UserMenu />
             </svelte:fragment>
         </AppBar>
-    </svelte:fragment>
-
-    <svelte:fragment slot="sidebarLeft">
-        <AppRail>
-            <a href="/" data-sveltekit-preload-data>
-                <AppRailTile value="/" currentpath={currentPath} title="Home" name="home" group="app">
-                    <svelte:fragment slot="lead">🏠</svelte:fragment>
-                    <span>Home</span>
-                </AppRailTile>
-            </a>
-
-            {#if $user}
-                <a href="/optimizer" data-sveltekit-preload-data>
-                    <AppRailTile value="/optimizer" currentpath={currentPath} title="Optimizer" name="optimizer" group="app">
-                        <svelte:fragment slot="lead">📊</svelte:fragment>
-                        <span>Optimizer</span>
-                    </AppRailTile>
-                </a>
-            {/if}
-
-        </AppRail>
     </svelte:fragment>
 
     <!-- Main content -->

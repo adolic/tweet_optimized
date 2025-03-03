@@ -3,14 +3,8 @@
     import { user } from '$lib/stores/user';
     import LoginModal from './LoginModal.svelte';
     import { env } from '$env/dynamic/public';
-    import { onMount } from 'svelte';
 
     const modalStore = getModalStore();
-    let isLocalhost = false;
-
-    onMount(() => {
-        isLocalhost = window.location.hostname === 'localhost';
-    });
 
     function showLoginModal() {
         modalStore.trigger({
@@ -43,6 +37,12 @@
         </button>
         
         <nav class="card p-4 shadow-xl" data-popup="user-menu">
+            <a 
+                href="/optimizer"
+                class="btn variant-ghost w-full text-left mb-2"
+            >
+                Tweet Optimizer
+            </a>
             <button 
                 class="btn variant-ghost w-full text-left"
                 on:click={handleLogout}
@@ -51,7 +51,7 @@
             </button>
         </nav>
     </div>
-{:else if isLocalhost}
+{:else}
     <button class="btn variant-soft-primary" on:click={showLoginModal}>
         Login
     </button>

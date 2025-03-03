@@ -3,6 +3,9 @@
     import { env } from '$env/dynamic/public';
     import { onMount } from 'svelte';
     import Chart from 'chart.js/auto';
+    import { user } from '$lib/stores/user';
+    import { getModalStore } from '@skeletonlabs/skeleton';
+    import LoginModal from '$lib/components/LoginModal.svelte';
     
     // User inputs
     let followers: number = 0;
@@ -36,6 +39,14 @@
     
     // API URL with fallback for development
     const API_URL = typeof env !== 'undefined' ? env.PUBLIC_API_URL : 'http://localhost:8000';
+
+    const modalStore = getModalStore();
+
+    // Function to get the session token
+    function getSessionToken(): string | null {
+        if (typeof window === 'undefined') return null; // SSR check
+        return localStorage.getItem('session_token');
+    }
 
     // Check if current form values match an existing prediction
     function isDuplicatePrediction(): boolean {
@@ -374,9 +385,8 @@
             return;
         }
 
-        // Check for duplicates before proceeding
         if (isDuplicatePrediction()) {
-            error = "This exact prediction already exists";
+            error = "This prediction already exists";
             return;
         }
 
@@ -384,11 +394,26 @@
         error = null;
 
         try {
+            // Get the session token
+            const token = getSessionToken();
+            if (!token) {
+                error = "You need to be logged in to make predictions";
+                isLoading = false;
+                
+                // Show login modal after a short delay
+                setTimeout(() => {
+                    showLoginModal();
+                }, 1000);
+                
+                return;
+            }
+
             // Make request to tweet forecast endpoint
             const response = await fetch(`${API_URL}/tweet-forecast`, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify({
                     text: tweetText,
@@ -398,7 +423,19 @@
             });
 
             if (!response.ok) {
-                throw new Error('Error getting prediction');
+                if (response.status === 401) {
+                    error = "Your session has expired. Please log in again.";
+                    // Show login modal after a short delay
+                    setTimeout(() => {
+                        showLoginModal();
+                    }, 1000);
+                    
+                    // Clear the session token
+                    localStorage.removeItem('session_token');
+                    return;
+                }
+                
+                throw new Error(`Error: ${response.status} ${response.statusText}`);
             }
 
             const data = await response.json();
@@ -432,12 +469,14 @@
                 updateCharts();
             }
             
+            // Reset loading state after successful prediction
+            isLoading = false;
+            
             // Don't reset form anymore - let users iterate
             
         } catch (err: unknown) {
             console.error('Prediction error:', err);
             error = err instanceof Error ? err.message : 'Failed to get prediction';
-        } finally {
             isLoading = false;
         }
     }
@@ -495,6 +534,19 @@
             });
     }
     
+    function showLoginModal() {
+        modalStore.trigger({
+            type: 'component',
+            component: {
+                ref: LoginModal
+            },
+            meta: {
+                position: 'center',
+                backdropClasses: 'bg-surface-500/50'
+            }
+        });
+    }
+
     // Initialize charts on mount
     onMount(() => {
         // Load data from localStorage first

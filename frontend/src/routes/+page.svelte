@@ -4,6 +4,7 @@
 	import { onMount } from 'svelte';
 	import { env } from '$env/dynamic/public';
 	import { user } from '$lib/stores/user';
+	import { goto } from '$app/navigation';
 
 	interface Library {
 		library_name: string;
@@ -288,9 +289,22 @@
 	}
 
 	onMount(() => {
+		// Redirect authenticated users to the optimizer page
+		if ($user) {
+			goto('/optimizer');
+			return;
+		}
+		
 		fetchLibraries();
 		fetchRecentlyUsed();
 	});
+
+	// Also watch for user status changes to redirect if they log in
+	$: if ($user) {
+		if (typeof window !== 'undefined') {
+			goto('/optimizer');
+		}
+	}
 
 	$: {
 		searchQuery;

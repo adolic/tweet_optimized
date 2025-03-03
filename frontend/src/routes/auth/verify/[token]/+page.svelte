@@ -45,7 +45,7 @@
             // Only update user state if verification was successful
             if (data.success && data.session_token) {
                 user.setSessionToken(data.session_token);
-                goto('/');
+                goto('/optimizer');
             } else {
                 throw new Error('Invalid response from server');
             }

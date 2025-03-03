@@ -164,14 +164,7 @@ async def get_tweet_forecast(request: Request, current_user: dict = Depends(get_
             "text": text, 
             "author_followers_count": author_followers_count,
             "is_blue_verified": is_blue_verified
-        })
-        
-        # Store the prediction in the database
-        saved_id = db_execute("""
-            INSERT INTO twitter_forecast (user_id, text, author_followers_count, is_blue_verified, prediction)
-            VALUES (%s, %s, %s, %s, %s)
-            RETURNING id
-        """, (current_user["id"], text, author_followers_count, is_blue_verified, prediction))
+        }, [0.1] + list(range(1, 25)))
         
         return {"prediction": prediction}
     except Exception as e:
