@@ -169,6 +169,14 @@ class Auth:
             WHERE s.token = %s
         """, (token,))
 
+    def is_valid_session(self, token: str) -> bool:
+        """Check if a session token is valid."""
+        if not token:
+            return False
+        
+        user = self.get_user_by_session(token)
+        return user is not None
+
     def logout(self, token: str) -> bool:
         """Remove a session."""
         db_execute("DELETE FROM sessions WHERE token = %s", (token,))

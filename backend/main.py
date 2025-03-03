@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from backend.lib.database import db_query, db_execute
 import logging
@@ -46,6 +46,39 @@ class VerifyRequest(BaseModel):
 class ToggleVisibilityRequest(BaseModel):
     document_id: int
     show_live: bool
+
+# Authentication dependency
+async def get_current_user(request: Request):
+    """Get the current authenticated user or raise 401 error."""
+    auth_header = request.headers.get('Authorization')
+    
+    if not auth_header or not auth_header.startswith('Bearer '):
+        raise HTTPException(
+            status_code=401, 
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+    
+    token = auth_header.split(' ')[1]
+    auth = Auth()
+    user = auth.get_user_by_session(token)
+    
+    if not user:
+        raise HTTPException(
+            status_code=401, 
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+    
+    return user
+
+# Optional authentication - doesn't raise error if not authenticated
+async def get_optional_user(request: Request):
+    """Get the current user or return None if not authenticated."""
+    try:
+        return await get_current_user(request)
+    except HTTPException:
+        return None
 
 @app.post("/auth/login")
 async def login(request: LoginRequest):
@@ -111,22 +144,8 @@ async def get_user_data(request: Request):
         logger.error(f"Error in get_user_data: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/proxy")
-async def proxy_request(url: str):
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url)
-            if response.status_code != 200:
-                raise HTTPException(status_code=response.status_code, detail="Failed to fetch document")
-            return response.text
-    except Exception as e:
-        logger.error(f"Error in proxy_request: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-
 @app.post("/tweet-forecast")
-async def get_tweet_forecast(request: Request):
+async def get_tweet_forecast(request: Request, current_user: dict = Depends(get_current_user)):
     try:
         data = await request.json()
         # must be present, text, author_followers_count, is_blue_verified
@@ -145,11 +164,16 @@ async def get_tweet_forecast(request: Request):
             "text": text, 
             "author_followers_count": author_followers_count,
             "is_blue_verified": is_blue_verified
-        }, age_hours=[0.1] + list(range(1, 25)))
+        })
         
-        return {
-            "prediction": prediction,
-        }
+        # Store the prediction in the database
+        saved_id = db_execute("""
+            INSERT INTO twitter_forecast (user_id, text, author_followers_count, is_blue_verified, prediction)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id
+        """, (current_user["id"], text, author_followers_count, is_blue_verified, prediction))
+        
+        return {"prediction": prediction}
     except Exception as e:
         logger.error(f"Error in get_tweet_forecast: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
