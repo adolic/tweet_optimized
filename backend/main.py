@@ -35,7 +35,7 @@ MODEL = Models.load(["views", "likes", "retweets", "comments"])
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Update this in production
+    allow_origins=["https://tweet-optimize.com", "http://localhost:3001", "http://localhost:8080"],  # Specific origins allowed
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
