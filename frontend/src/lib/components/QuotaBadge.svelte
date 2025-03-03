@@ -1,0 +1,130 @@
+<!-- Quota Badge component that displays compact quota information -->
+<script lang="ts">
+    import { onMount } from 'svelte';
+    import { user } from '$lib/stores/user';
+    import { env } from '$env/dynamic/public';
+    import { popup } from '@skeletonlabs/skeleton';
+    
+    // Quota data structure
+    export let quotaData: any = null;
+    export let refreshQuota: () => Promise<void>;
+    export let isLoading: boolean = false;
+    
+    // API URL with fallback for development
+    const API_URL = typeof env !== 'undefined' ? env.PUBLIC_API_URL : 'http://localhost:8000';
+    
+    // Computed values
+    $: usagePercentage = quotaData?.quota?.quota?.predictions_limit > 0 
+        ? (quotaData?.quota?.quota?.predictions_used / quotaData?.quota?.quota?.predictions_limit) * 100 
+        : 0;
+    
+    $: badgeColor = usagePercentage < 70 
+        ? 'bg-primary-500' 
+        : usagePercentage < 90 
+            ? 'bg-warning-500' 
+            : 'bg-error-500';
+    
+    // Format date to show month and year
+    const formatResetDate = (dateStr: string): string => {
+        if (!dateStr) return '';
+        const date = new Date(dateStr);
+        return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    };
+
+    onMount(() => {
+        if ($user && !quotaData) {
+            refreshQuota();
+        }
+    });
+</script>
+
+<!-- Compact quota badge for header -->
+{#if quotaData && quotaData.quota && quotaData.quota.quota}
+    <div class="flex items-center gap-2">
+        <!-- Quota badge with popover -->
+        <button 
+            use:popup={{ event: 'hover', target: 'quota-popup', placement: 'bottom' }}
+            class="badge-quota {badgeColor}"
+            on:click={refreshQuota}
+            title="Click to refresh"
+        >
+            {quotaData.quota.quota.predictions_used} / {quotaData.quota.quota.predictions_limit}
+        </button>
+
+        <!-- Popup with more details -->
+        <div class="card p-3 shadow-xl quota-popup" data-popup="quota-popup">
+            <div class="text-sm space-y-2">
+                <p class="font-semibold">Prediction Quota</p>
+                <div class="progress h-2 rounded-full">
+                    <div class={`progress-bar ${badgeColor} rounded-full`} 
+                         style={`width: ${Math.min(usagePercentage, 100)}%`}>
+                    </div>
+                </div>
+                <p class="text-xs">
+                    Resets on {formatResetDate(quotaData.quota.quota.period_end)}
+                </p>
+                {#if quotaData.stats.subscription}
+                    <p class="text-xs">
+                        Plan: {quotaData.stats.subscription.plan_name}
+                    </p>
+                {/if}
+                <div class="mt-2">
+                    <a href="/subscription" class="text-xs text-primary-500 hover:underline">
+                        View Plans
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+{:else if isLoading}
+    <div class="badge-quota bg-surface-300">
+        <div class="spinner w-3 h-3"></div>
+    </div>
+{/if}
+
+<style>
+    .badge-quota {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.35rem 0.75rem;
+        border-radius: 1rem;
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: white;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    
+    .badge-quota:hover {
+        transform: scale(1.05);
+        filter: brightness(1.1);
+    }
+    
+    .quota-popup {
+        width: 200px;
+        z-index: 100;
+    }
+    
+    .spinner {
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        border-top: 2px solid white;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+    }
+    
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    .progress {
+        width: 100%;
+        background-color: rgba(255, 255, 255, 0.2);
+        overflow: hidden;
+    }
+
+    .progress-bar {
+        height: 100%;
+        transition: width 0.3s ease;
+    }
+</style> 
