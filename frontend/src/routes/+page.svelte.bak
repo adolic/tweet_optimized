@@ -1,0 +1,476 @@
+<!-- YOU CAN DELETE EVERYTHING IN THIS PAGE -->
+
+<script lang="ts">
+	import { onMount } from 'svelte';
+	import { env } from '$env/dynamic/public';
+	import { user } from '$lib/stores/user';
+	import { goto } from '$app/navigation';
+	import { storePopup, type PopupSettings } from '@skeletonlabs/skeleton';
+
+	interface Library {
+		library_name: string;
+		version: string;
+		token_size: number;
+		n_words: number;
+		n_chars: number;
+		bytes: number;
+		s3_path: string;
+		size_description: 'full' | 'full-minified' | 'core' | 'slim';
+		library_version_id: string;
+		show_live: boolean;
+		document_id: number;
+	}
+
+	type SortKey = keyof Pick<Library, 'library_name' | 'version' | 'token_size' | 'n_words' | 'bytes'>;
+	type SortDirection = 'asc' | 'desc';
+
+	const CDN_PREFIX = "https://llm-docs.ams3.cdn.digitaloceanspaces.com/";
+
+	const sizeChipVariants = {
+		'full': 'variant-filled-primary',
+		'full-minified': 'variant-filled-secondary',
+		'core': 'variant-filled-tertiary',
+		'slim': 'variant-filled-success'
+	} as const;
+
+	const sizeDisplayNames = {
+		'full': 'FULL',
+		'full-minified': 'MINIFIED',
+		'core': 'CORE',
+		'slim': 'SLIM'
+	} as const;
+
+	type SizeType = keyof typeof sizeChipVariants;
+
+	let libraries: Library[] = [];
+	let loading = true;
+	let error: string | null = null;
+	let searchQuery = '';
+	let selectedTypes: SizeType[] = [];
+	let sortKey: SortKey = 'library_name';
+	let sortDirection: SortDirection = 'asc';
+	let copyStatus: { [key: string]: string } = {};
+	let currentPage = 1;
+	let pageSize = 10;
+	let totalItems = 0;
+	let debouncedSearchTimeout: NodeJS.Timeout;
+	let recentlyUsed: Library[] = [];
+	const MAX_RECENT_ITEMS = 10;
+
+	function toggleSort(key: SortKey) {
+		if (sortKey === key) {
+			sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+		} else {
+			sortKey = key;
+			sortDirection = 'asc';
+		}
+	}
+
+	function getSortIndicator(key: SortKey): string {
+		if (sortKey !== key) return '↕';
+		return sortDirection === 'asc' ? '↑' : '↓';
+	}
+
+	function toggleType(type: string) {
+		const sizeType = type as SizeType;
+		const index = selectedTypes.indexOf(sizeType);
+		if (index === -1) {
+			selectedTypes = [...selectedTypes, sizeType];
+		} else {
+			selectedTypes = selectedTypes.filter(t => t !== sizeType);
+		}
+	}
+
+	function formatSize(bytes: number): string {
+		const units = ['B', 'KB', 'MB', 'GB'];
+		let size = bytes;
+		let unitIndex = 0;
+		
+		while (size >= 1024 && unitIndex < units.length - 1) {
+			size /= 1024;
+			unitIndex++;
+		}
+		
+		return `${size.toFixed(2)} ${units[unitIndex]}`;
+	}
+
+	$: chipClasses = (type: string) => {
+		const isSelected = selectedTypes.includes(type as SizeType);
+		return `chip ${sizeChipVariants[type as SizeType]} ${isSelected ? 'ring-1 !ring-offset-0' : 'opacity-50'}`;
+	};
+
+	$: filteredLibraries = libraries.filter(item => {
+		if (!item.show_live && !$user?.is_admin) return false;
+
+		const searchLower = searchQuery.toLowerCase();
+		const matchesSearch = 
+			item.library_name.toLowerCase().includes(searchLower) ||
+			item.version.toLowerCase().includes(searchLower);
+		
+		const matchesType = selectedTypes.length === 0 || selectedTypes.includes(item.size_description);
+		
+		return matchesSearch && matchesType;
+	}).sort((a, b) => {
+		if (a.show_live !== b.show_live) {
+			return a.show_live ? -1 : 1;
+		}
+
+		const aValue = a[sortKey];
+		const bValue = b[sortKey];
+		const modifier = sortDirection === 'asc' ? 1 : -1;
+		
+		if (typeof aValue === 'string' && typeof bValue === 'string') {
+			return aValue.localeCompare(bValue) * modifier;
+		}
+		return ((aValue as number) - (bValue as number)) * modifier;
+	});
+
+	function debounceSearch() {
+		if (debouncedSearchTimeout) {
+			clearTimeout(debouncedSearchTimeout);
+		}
+		debouncedSearchTimeout = setTimeout(() => {
+			currentPage = 1; // Reset to first page on new search
+			fetchLibraries();
+		}, 300);
+	}
+
+	async function fetchLibraries() {
+		loading = true;
+		error = null;
+		try {
+			const searchParams = new URLSearchParams({
+				page: currentPage.toString(),
+				page_size: pageSize.toString(),
+			});
+			
+			if (searchQuery) {
+				searchParams.set('search', searchQuery);
+			}
+
+			const response = await fetch(`${env.PUBLIC_API_URL}?${searchParams.toString()}`);
+			if (!response.ok) throw new Error('Failed to fetch libraries');
+			const data = await response.json();
+			libraries = data.items;
+			totalItems = data.total;
+		} catch (e: unknown) {
+			console.error('Error fetching libraries:', e);
+			if (e instanceof Error) {
+				error = e.message;
+			} else {
+				error = 'An unknown error occurred';
+			}
+		} finally {
+			loading = false;
+		}
+	}
+
+	function handlePageChange(newPage: number) {
+		currentPage = newPage;
+		fetchLibraries();
+	}
+
+	function addToRecentlyUsed(item: Library) {
+		// Get existing items, if none exist, start with empty array
+		const recentItems = JSON.parse(localStorage.getItem('recently_used') || '[]');
+		
+		// Remove the current item if it exists (to avoid duplicates)
+		const filteredItems = recentItems.filter((id: number) => id !== item.document_id);
+		
+		// Add new item to the beginning (most recent)
+		filteredItems.unshift(item.document_id);
+		
+		// Keep only the most recent 10 items (FIFO)
+		const updatedItems = filteredItems.slice(0, MAX_RECENT_ITEMS);
+		
+		// Save back to localStorage
+		localStorage.setItem('recently_used', JSON.stringify(updatedItems));
+		
+		// Fetch updated items to refresh the UI
+		fetchRecentlyUsed();
+	}
+
+	async function fetchRecentlyUsed() {
+		try {
+			const recentIds = JSON.parse(localStorage.getItem('recently_used') || '[]');
+			if (recentIds.length === 0) {
+				recentlyUsed = [];
+				return;
+			}
+
+			const response = await fetch(`${env.PUBLIC_API_URL}/libraries-by-ids`, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({ ids: recentIds })
+			});
+
+			if (!response.ok) throw new Error('Failed to fetch recently used items');
+			const data = await response.json();
+			recentlyUsed = data.items;
+		} catch (e) {
+			console.error('Error fetching recently used items:', e);
+			recentlyUsed = [];
+		}
+	}
+
+	async function trackEvent(eventType: 'view' | 'copy', item: Library) {
+		try {
+			await fetch(`${env.PUBLIC_API_URL}/track-event`, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({
+					event_type: eventType,
+					library_version_id: parseInt(item.library_version_id, 10),
+					size_description: item.size_description
+				})
+			});
+			addToRecentlyUsed(item);
+		} catch (e) {
+			console.error('Failed to track event:', e);
+		}
+	}
+
+	async function copyToClipboard(url: string, id: string, item: Library) {
+		try {
+			const response = await fetch(`${env.PUBLIC_API_URL}/proxy?url=${encodeURIComponent(CDN_PREFIX + url)}`);
+			if (!response.ok) throw new Error('Failed to fetch documentation');
+			const text = await response.text();
+			await navigator.clipboard.writeText(text);
+			copyStatus[id] = 'Copied!';
+			await trackEvent('copy', item);
+			setTimeout(() => {
+				copyStatus[id] = '';
+			}, 2000);
+		} catch (e) {
+			console.error('Error copying to clipboard:', e);
+			copyStatus[id] = 'Failed to copy';
+			setTimeout(() => {
+				copyStatus[id] = '';
+			}, 2000);
+		}
+	}
+
+	async function toggleVisibility(item: Library) {
+		try {
+			const token = localStorage.getItem('session_token');
+			if (!token) return;
+
+			const response = await fetch(`${env.PUBLIC_API_URL}/toggle-visibility`, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'Authorization': `Bearer ${token}`
+				},
+				body: JSON.stringify({
+					document_id: item.document_id,
+					show_live: !item.show_live
+				})
+			});
+
+			if (!response.ok) throw new Error('Failed to toggle visibility');
+
+			// Update local state
+			libraries = libraries.map(lib => 
+				lib.document_id === item.document_id 
+					? { ...lib, show_live: !lib.show_live }
+					: lib
+			);
+		} catch (e) {
+			console.error('Error toggling visibility:', e);
+		}
+	}
+
+	function clearRecentlyUsed() {
+		localStorage.removeItem('recently_used');
+		recentlyUsed = [];
+	}
+
+	// Automatically redirect to optimizer if already logged in
+	onMount(() => {
+		if ($user) {
+			goto('/optimizer');
+		}
+	});
+
+	// Also watch for user status changes to redirect if they log in
+	$: if ($user) {
+		if (typeof window !== 'undefined') {
+			goto('/optimizer');
+		}
+	}
+
+	$: {
+		searchQuery;
+		debounceSearch();
+	}
+
+	$: totalPages = Math.ceil(totalItems / pageSize);
+	$: paginatedLibraries = libraries;
+
+	// For the popup
+	const popupFeatures = {
+		event: 'click',
+		target: 'popupFeatures',
+		placement: 'bottom'
+	};
+
+	// Features list
+	const features = [
+		{
+			title: 'Minified Documentation',
+			description: 'Optimized documentation for various libraries, tailored for LLM context windows'
+		},
+		{
+			title: 'One-Click Copy',
+			description: 'Copy any document with a single click for immediate use in your AI prompts'
+		},
+		{
+			title: 'Multiple Size Options',
+			description: 'Choose from full, minified, core, or slim versions based on your token needs'
+		},
+		{
+			title: 'Library Comparison',
+			description: 'Compare token sizes across different libraries to optimize your prompts'
+		}
+	];
+</script>
+
+<!-- Hero Section -->
+<div class="container mx-auto px-4 py-12">
+	<div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
+		<div>
+			<h1 class="h1 font-bold mb-4">LLM-Docs</h1>
+			<p class="h3 mb-6">Optimized Documentation for LLM Context Windows</p>
+			<p class="mb-8">
+				Access hundreds of minified documentation packages for popular libraries and frameworks.
+				Perfect for AI developers who need to include documentation in their prompts without
+				wasting precious tokens.
+			</p>
+			<div class="flex flex-col sm:flex-row gap-4">
+				<a href="/auth/login" class="btn variant-filled-primary">Get Started</a>
+				<button class="btn variant-soft-secondary" use:storePopup={popupFeatures}>
+					Learn More
+				</button>
+			</div>
+			<div class="card p-4 shadow-xl" data-popup="popupFeatures">
+				<div class="arrow bg-surface-100-800-token" />
+				<h3 class="h3 mb-2">Key Features</h3>
+				<ul class="list">
+					{#each features as feature}
+						<li>
+							<strong>{feature.title}</strong> - {feature.description}
+						</li>
+					{/each}
+				</ul>
+			</div>
+		</div>
+		<div class="flex justify-center">
+			<img 
+				src="/static/table.png" 
+				alt="Library documentation table" 
+				class="rounded-lg shadow-xl max-w-full h-auto"
+			/>
+		</div>
+	</div>
+</div>
+
+<!-- Features Section -->
+<div class="bg-surface-100-800-token py-16">
+	<div class="container mx-auto px-4">
+		<h2 class="h2 text-center mb-12">Why Use LLM-Docs?</h2>
+		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+			{#each features as feature}
+				<div class="card p-6 h-full flex flex-col">
+					<h3 class="h3 mb-2">{feature.title}</h3>
+					<p>{feature.description}</p>
+				</div>
+			{/each}
+		</div>
+	</div>
+</div>
+
+<!-- Analytics Section -->
+<div class="container mx-auto px-4 py-16">
+	<div class="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+		<div>
+			<h2 class="h2 mb-6">Optimize Your LLM Context</h2>
+			<p class="mb-4">
+				Our analytics help you understand exactly how much of your precious context window each
+				library's documentation will consume. Compare different versions and make informed decisions
+				about what to include in your prompts.
+			</p>
+			<p class="mb-8">
+				With LLM-Docs, you can track token usage, character count, and byte size for every document
+				in our library.
+			</p>
+			<a href="/auth/signup" class="btn variant-filled-primary">Create Free Account</a>
+		</div>
+		<div class="flex justify-center">
+			<img 
+				src="/static/graphs.png" 
+				alt="Analytics graphs" 
+				class="rounded-lg shadow-xl max-w-full h-auto" 
+			/>
+		</div>
+	</div>
+</div>
+
+<!-- CTA Section -->
+<div class="bg-primary-500 text-white py-16">
+	<div class="container mx-auto px-4 text-center">
+		<h2 class="h2 mb-6">Ready to Optimize Your AI Development?</h2>
+		<p class="mb-8 max-w-2xl mx-auto">
+			Join thousands of AI developers who are building better AI applications with optimized documentation.
+		</p>
+		<div class="flex flex-col sm:flex-row justify-center gap-4">
+			<a href="/auth/signup" class="btn variant-filled">Sign Up for Free</a>
+			<a href="/auth/login" class="btn variant-ringed-white">Log In</a>
+		</div>
+	</div>
+</div>
+
+<style>
+	.table-container {
+		@apply overflow-x-auto;
+	}
+	
+	.table {
+		@apply w-full;
+	}
+	
+	.table th, .table td {
+		@apply p-2 text-center;
+	}
+
+	.table th button {
+		@apply hover:bg-surface-500/20 p-2 rounded-token transition-colors;
+	}
+
+	/* Set width for library name column */
+	.table th:first-child,
+	.table td:first-child {
+		@apply w-48 max-w-md truncate;
+	}
+	
+	.btn-sm {
+		@apply py-1 px-2 text-sm;
+	}
+
+	:global(.input) {
+		@apply w-full;
+	}
+
+	:global(.chip) {
+		@apply text-xs font-semibold px-2 py-1 rounded-full cursor-pointer uppercase;
+	}
+
+	/* Add custom styles if needed */
+	:global(.card) {
+		background-color: var(--color-surface-100);
+		color: var(--color-surface-900);
+	}
+</style>
