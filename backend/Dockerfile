@@ -15,6 +15,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application
 COPY . .
 
+# Install the application in development mode
+# This makes Python treat the backend directory as a package
+RUN pip install -e .
+
 # Set the Python path and working directory
 ENV PYTHONPATH=/app
 WORKDIR /app
