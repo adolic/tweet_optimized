@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 295 285">
+  <path fill="none" stroke="#5DB1EF" stroke-width="10" d="M147.5 42.5l86.6 50v100l-86.6 50-86.6-50v-100z"/>
+  <g transform="translate(147.5,142.5)">
+    <text text-anchor="middle" dy="0.35em" font-family="Arial" font-size="90" fill="#5DB1EF">&lt;/&gt;</text>
+  </g>
+</svg>
