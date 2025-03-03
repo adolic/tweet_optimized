@@ -6,7 +6,7 @@ import httpx
 from backend.lib.events import EventCreate, create_event
 from backend.lib.auth import Auth
 from pydantic import BaseModel
-from backend.model.train import Model
+from backend.model.models import Models
 from backend.config import DATA_DIR
 import pandas as pd
 
@@ -15,7 +15,8 @@ logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
-MODEL = Model.load(DATA_DIR / "model.pkl")
+# MODEL = Model.load(DATA_DIR / "model.pkl")
+MODEL = Models.load(["views", "likes", "retweets", "comments"])
 
 # Configure CORS
 app.add_middleware(
@@ -107,22 +108,30 @@ async def proxy_request(url: str):
 
 @app.post("/tweet-forecast")
 async def get_tweet_forecast(request: Request):
-    """neeeds text and author_followers_count"""
     try:
         data = await request.json()
-        if not isinstance(data, dict) or 'text' not in data or not isinstance(data['text'], str) or 'author_followers_count' not in data or not isinstance(data['author_followers_count'], int):
+        print(data)
+        # must be present, text, author_followers_count, is_blue_verified
+        if not isinstance(data, dict) or 'text' not in data or not isinstance(data['text'], str) \
+            or 'author_followers_count' not in data or not isinstance(data['author_followers_count'], (int, float)) \
+            or 'is_blue_verified' not in data or not isinstance(data['is_blue_verified'], (int, float)):
             raise HTTPException(status_code=400, detail="Invalid request format")
         
         text = data['text']
         author_followers_count = int(data['author_followers_count'])
-        if not text or not author_followers_count:
-            return {"items": []}
+        is_blue_verified = int(data['is_blue_verified'])
+        if not text or author_followers_count <= 0:
+            return {"prediction": 0, "error": "Invalid input data"}
         
-        data = pd.DataFrame([{"text": text, "author_followers_count": author_followers_count}])
-        prediction = MODEL.predict(data)
-
+        prediction = MODEL.predict( {
+            "text": text, 
+            "author_followers_count": author_followers_count,
+            "is_blue_verified": is_blue_verified
+        }, age_hours=[0.1] + list(range(1, 24)))
         
-        return {"prediction": prediction}
+        return {
+            "prediction": prediction,
+        }
     except Exception as e:
         logger.error(f"Error in get_tweet_forecast: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

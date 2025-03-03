@@ -7,11 +7,11 @@ from sentence_transformers import SentenceTransformer
 import lightgbm as lgb
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend
-from utils import  preprocess_text, transform_features, evaluate, plot_feature_importance, get_shap, compare_predictions
+from backend.model.utils import  preprocess_text, transform_features, evaluate, plot_feature_importance, get_shap, compare_predictions
 
 
 class Model:
-    def __init__(self):
+    def __init__(self, target="views", sentece_transformer=None, max_ratio=2000):
         self.num_features = [
             "author_followers_count",
             # "author_following_count",
@@ -23,7 +23,7 @@ class Model:
         ]
 
         self.cat_features = []
-        self.target = "views"
+        self.target = target
         # self.target = "likes"
         # self.target = "retweets"
         # self.target = "comments"
@@ -33,7 +33,10 @@ class Model:
         self.transformer_model_name = 'all-MiniLM-L6-v2'  # Small but effective model
         self.embedding_size = 384  # Size of embeddings from all-MiniLM-L6-v2
         self.text_feat = [f"text_emb_{i}" for i in range(self.embedding_size)]
-        self.transformer = SentenceTransformer(self.transformer_model_name)
+        if sentece_transformer is None:
+            self.transformer = SentenceTransformer(self.transformer_model_name)
+        else:
+            self.transformer = sentece_transformer
 
         self.monotonic_constraints = {
             "author_followers_count": 1,
@@ -42,7 +45,7 @@ class Model:
             "age_hours": 1,
             "is_blue_verified": 1
         }
-
+        self.max_ratio = max_ratio
     def get_data(self):
         df = db_query("SELECT * FROM twitter_forecast")
         df = pd.DataFrame(df)
@@ -60,6 +63,10 @@ class Model:
         mask = (df["age_hours"] >= MIN_HOURS) & (df["age_hours"] <= MAX_HOURS) & (df["views"] >= MIN_VIEWS)
         df = df[mask].copy()
         df["text"] = df["text"].apply(preprocess_text)
+
+        df["ratio"] = df["views"] / df["author_followers_count"]
+        df = df[df["ratio"] < self.max_ratio].copy()
+
         df = transform_features(df)
         return df
     
@@ -69,9 +76,10 @@ class Model:
         group_kfold = GroupKFold(n_splits=n_splits)
 
         # Use the defined features from earlier
-        X = df[self.num_features + self.cat_features + self.text_features].copy()
+        X = df.copy()
         X = transform_features(X)
-        y = np.log1p(df[self.target])
+        y = np.log1p(X[self.target])
+        X = X[self.num_features + self.cat_features + self.text_features].copy()
 
         # Use author as the group
         groups = df['author']
@@ -113,9 +121,6 @@ class Model:
     def train(self, X_train, X_test, y_train, y_test):
         early_stop_callback = lgb.early_stopping(stopping_rounds=50)
         
-        # Define monotonic constraints
-        
-        
         # Create a constraint array based on feature presence
         feature_names = X_train.columns.tolist()
         monotone_constraints_array = []
@@ -129,6 +134,7 @@ class Model:
         params = {
             'objective': 'regression',
             'metric': 'rmse',
+            # 'metric': 'mse',
             'boosting_type': 'gbdt',
             'n_estimators': 500,
             'learning_rate': 0.05,
@@ -141,7 +147,7 @@ class Model:
         self.model = model  # Store the trained model in the instance
         return model
     
-    def save(self, filepath):
+    def save(self):
         """
         Save the model and its components to disk.
         
@@ -152,7 +158,8 @@ class Model:
         import os
         
         # Create directory if it doesn't exist
-        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        filepath = DATA_DIR / f"model_{self.target}.pkl"
+        filepath.parent.mkdir(parents=True, exist_ok=True)
         
         # Prepare a dictionary with all components needed for prediction
         model_data = {
@@ -162,7 +169,8 @@ class Model:
             'cat_features': self.cat_features,
             'text_features': self.text_features,
             'text_feat': self.text_feat,
-            'embedding_size': self.embedding_size
+            'embedding_size': self.embedding_size,
+            'target': self.target
         }
         
         # Save the model data
@@ -172,7 +180,7 @@ class Model:
         print(f"Model saved to {filepath}")
     
     @classmethod
-    def load(cls, filepath):
+    def load(cls, filepath, sentece_transformer=None):
         import pickle
         
         # Load the model data
@@ -185,7 +193,10 @@ class Model:
         # Restore all components
         instance.model = model_data['model']
         instance.transformer_model_name = model_data['transformer_model_name']
-        instance.transformer = SentenceTransformer(instance.transformer_model_name)
+        if sentece_transformer is None:
+            instance.transformer = SentenceTransformer(instance.transformer_model_name)
+        else:
+            instance.transformer = sentece_transformer
         instance.num_features = model_data['num_features']
         instance.cat_features = model_data['cat_features']
         instance.text_features = model_data['text_features']
@@ -197,7 +208,7 @@ class Model:
     def predict(self, data):
         import numpy as np
         import pandas as pd
-        from utils import transform_features, preprocess_text
+        from backend.model.utils import transform_features, preprocess_text
         
         # Check if model exists
         if not hasattr(self, 'model'):
@@ -261,10 +272,9 @@ if __name__ == "__main__":
     plot_feature_importance(DATA_DIR,trained_model, model_instance.num_features + model_instance.cat_features + model_instance.text_feat, model_instance.transformer)
     get_shap(DATA_DIR,trained_model, X_test, model_instance.transformer)
 
-    model_save_path = DATA_DIR / "model.pkl"
-    model_instance.save(model_save_path)
+    model_instance.save()
 
-    loaded_model = Model.load(model_save_path)
+    loaded_model = Model.load(DATA_DIR / "model_views.pkl")
     compare_predictions(model_instance, loaded_model, X_test, df)
 
 
