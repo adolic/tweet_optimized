@@ -1,7 +1,7 @@
 # Backend API for tweet-optimize.com
-location /api {
-    rewrite ^/api/?(.*)$ /$1 break;
-    proxy_pass http://tweet-optimizer-backend:8000;
+location /api/ {
+    # No rewrite needed, just remove /api from the URI
+    proxy_pass http://tweet-optimizer-backend:8000/;
     proxy_http_version 1.1;
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection $connection_upgrade;
