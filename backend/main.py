@@ -1,8 +1,8 @@
 import os
 import sys
 
-# Add the parent directory to sys.path to make 'backend' importable
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Remove the path modification as we're setting PYTHONPATH in the Dockerfile
+# sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import FastAPI, HTTPException, Request, Depends, Response
 from fastapi.middleware.cors import CORSMiddleware
