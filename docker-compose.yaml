@@ -1,31 +1,35 @@
 version: "3.8"
 
 services:
-  backend:
+  tweet-optimizer-backend:
     build: 
       context: ./backend
     ports:
-      - "8000:8000"
+      - "8001:8000"
     env_file:
       - ./backend/.env
     restart: unless-stopped
+    networks:
+      - tweet-optimizer-network
 
-  frontend:
+  tweet-optimizer-frontend:
     build:
       context: ./frontend
     ports:
-      - "3000:80"
+      - "3001:80"
     env_file:
       - ./frontend/.env
     depends_on:
-      - backend
+      - tweet-optimizer-backend
     restart: unless-stopped
+    networks:
+      - tweet-optimizer-network
 
-  nginx:
+  tweet-optimizer-nginx:
     image: nginx:alpine
     ports:
-      - "80:80"
-      - "443:443"
+      - "8080:80"
+      - "4443:443"
     volumes:
       - type: bind
         source: ./conf/nginx/conf.d
@@ -33,7 +37,16 @@ services:
       - type: bind
         source: ./ssl
         target: /etc/nginx/ssl
+      - type: bind
+        source: ./conf/nginx/nginx.conf
+        target: /etc/nginx/nginx.conf
     depends_on:
-      - frontend
-      - backend
-    restart: unless-stopped 
+      - tweet-optimizer-frontend
+      - tweet-optimizer-backend
+    restart: unless-stopped
+    networks:
+      - tweet-optimizer-network
+
+networks:
+  tweet-optimizer-network:
+    name: tweet-optimizer-network 

@@ -97,9 +97,9 @@ class QuotaService:
         }
     
     @staticmethod
-    def record_prediction(user_id: int, text: str, followers_count: int, is_verified: bool) -> None:
+    def record_prediction(user_id: int, text: str = None, followers_count: int = None, is_verified: bool = None) -> None:
         """
-        Record a prediction and update the user's quota usage.
+        Update a user's quota usage without recording the prediction content.
         Raises an exception if the user exceeded their quota.
         """
         # Check if prediction is allowed
@@ -107,13 +107,7 @@ class QuotaService:
         if not quota_check['allowed']:
             raise Exception(quota_check['reason'])
         
-        # Record the prediction
-        db_execute("""
-            INSERT INTO predictions (user_id, tweet_text, followers_count, is_verified)
-            VALUES (%s, %s, %s, %s)
-        """, (user_id, text, followers_count, bool(is_verified)))
-        
-        # Update the quota usage
+        # Update the quota usage (skip saving the prediction content)
         db_execute("""
             UPDATE quota_usage
             SET predictions_used = predictions_used + 1, updated_at = NOW()
@@ -131,6 +125,9 @@ class QuotaService:
                 SELECT 
                     us.id as subscription_id, 
                     us.status as subscription_status,
+                    us.current_period_start,
+                    us.current_period_end,
+                    us.cancellation_date,
                     sp.id as plan_id,
                     sp.name as plan_name, 
                     sp.description as plan_description, 
@@ -153,18 +150,15 @@ class QuotaService:
                 WHERE user_id = %s
                 ORDER BY period_start DESC
                 LIMIT 1
-            ),
-            -- Get total predictions count
-            total_predictions AS (
-                SELECT COUNT(*) as count 
-                FROM predictions 
-                WHERE user_id = %s
             )
             -- Combine all data
             SELECT 
                 -- Subscription data
                 cs.subscription_id,
                 cs.subscription_status,
+                cs.current_period_start,
+                cs.current_period_end,
+                cs.cancellation_date,
                 cs.plan_id,
                 cs.plan_name,
                 cs.plan_description,
@@ -174,13 +168,10 @@ class QuotaService:
                 cq.predictions_used,
                 cq.predictions_limit,
                 cq.period_start,
-                cq.period_end,
-                -- Total predictions
-                tp.count as total_predictions_count
+                cq.period_end
             FROM current_sub cs
             CROSS JOIN current_quota cq
-            CROSS JOIN total_predictions tp
-        """, (user_id, user_id, user_id))
+        """, (user_id, user_id))
         
         # If no stats found, create default structure
         if not stats:
@@ -191,15 +182,6 @@ class QuotaService:
             # Try again with the fresh quota
             return QuotaService.get_user_stats(user_id)
         
-        # Get 10 most recent predictions in a separate query
-        # (This is kept separate as we only need the full records for detailed display)
-        recent_predictions = db_query("""
-            SELECT * FROM predictions 
-            WHERE user_id = %s
-            ORDER BY created_at DESC
-            LIMIT 10
-        """, (user_id,))
-        
         # Format the result
         return {
             'current_quota': {
@@ -209,14 +191,17 @@ class QuotaService:
                 'period_start': stats.get('period_start'),
                 'period_end': stats.get('period_end')
             },
-            'total_predictions': stats.get('total_predictions_count', 0),
-            'recent_predictions': recent_predictions,
+            'total_predictions': stats.get('predictions_used', 0),  # Use current quota predictions instead of total historical
+            'recent_predictions': [],  # Empty array as we no longer store predictions
             'subscription': {
                 'id': stats.get('subscription_id'),
                 'status': stats.get('subscription_status'),
                 'plan_id': stats.get('plan_id'),
                 'plan_name': stats.get('plan_name', 'Free'),
                 'description': stats.get('plan_description'),
-                'monthly_quota': stats.get('monthly_quota', 0)
+                'monthly_quota': stats.get('monthly_quota', 0),
+                'current_period_start': stats.get('current_period_start'),
+                'current_period_end': stats.get('current_period_end'),
+                'cancellation_date': stats.get('cancellation_date')
             }
         } 

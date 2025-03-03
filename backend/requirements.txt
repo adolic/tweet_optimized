@@ -19,3 +19,4 @@ python-multipart
 xgboost
 joblib
 stripe
+tabulate

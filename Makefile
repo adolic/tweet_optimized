@@ -1,7 +1,7 @@
 CONDA_ENV_NAME = tweet-optimize
 PYTHON_VERSION = 3.11
 
-.PHONY: setup setup-backend setup-frontend run-backend run-frontend migrate train-models train
+.PHONY: setup setup-backend setup-frontend run-backend run-frontend migrate train-models train preview-data
 
 setup: setup-backend setup-frontend
 
@@ -43,3 +43,8 @@ run-backend:
 
 run-frontend:
 	cd frontend && npm run dev 
+
+# Preview database tables
+# Usage: make preview-data
+preview-data:
+	conda run -n $(CONDA_ENV_NAME) python backend/lib/db_viewer.py 

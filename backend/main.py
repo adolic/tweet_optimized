@@ -171,18 +171,16 @@ async def get_tweet_forecast(request: Request, data: TweetPredictionRequest, cur
         if not text or author_followers_count <= 0:
             return {"prediction": 0, "error": "Invalid input data"}
         
+        # Make the prediction first
         prediction = MODEL.predict({
             "text": text, 
             "author_followers_count": author_followers_count,
             "is_blue_verified": 1 if is_blue_verified else 0  # Convert to int for the ML model
         }, [0.1] + list(range(1, 25)))
         
-        # Record the prediction
+        # Only update quota after successful prediction
         QuotaService.record_prediction(
-            user_id=current_user['id'], 
-            text=text, 
-            followers_count=author_followers_count, 
-            is_verified=is_blue_verified  # Pass the boolean directly
+            user_id=current_user['id']
         )
         
         return {
@@ -654,3 +652,75 @@ async def get_session_status(session_id: str, current_user: dict = Depends(get_c
     except Exception as e:
         logger.error(f"Error processing session: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to process session")
+
+# Endpoint to cancel a subscription
+@app.post("/subscription/cancel")
+async def cancel_subscription(current_user: dict = Depends(get_current_user)):
+    """Cancel the user's active subscription"""
+    try:
+        # Get the user's active subscription
+        subscription = db_query_one("""
+            SELECT us.id, us.stripe_subscription_id, us.current_period_end
+            FROM user_subscriptions us
+            WHERE us.user_id = %s AND us.status = 'active'
+        """, (current_user['id'],))
+        
+        if not subscription:
+            logger.error(f"No active subscription found for user {current_user['id']}")
+            raise HTTPException(status_code=404, detail="No active subscription found")
+        
+        # Handle case where we have a subscription record but no Stripe subscription ID
+        if not subscription.get('stripe_subscription_id'):
+            logger.warning(f"User {current_user['id']} has an active subscription without Stripe ID")
+            
+            # Update subscription in our database - use the trigger to update user.is_premium
+            # Just mark it as cancelled but still active until period end
+            db_execute("""
+                UPDATE user_subscriptions 
+                SET cancellation_date = NOW()
+                WHERE id = %s
+            """, (subscription['id'],))
+            
+            # Use the current_period_end from our database if available
+            formatted_date = "the end of your current billing period"
+            if subscription.get('current_period_end'):
+                formatted_date = subscription['current_period_end'].strftime("%Y-%m-%d")
+            
+            return {
+                "status": "success", 
+                "message": f"Subscription will be cancelled at {formatted_date}",
+                "expiration_date": formatted_date
+            }
+        
+        # Otherwise, cancel the subscription in Stripe
+        stripe_subscription_id = subscription['stripe_subscription_id']
+        try:
+            # Use at_period_end=True to allow the user to use the subscription until the end of the current period
+            stripe_response = stripe.Subscription.modify(
+                stripe_subscription_id,
+                cancel_at_period_end=True
+            )
+            
+            # Update subscription in our database
+            db_execute("""
+                UPDATE user_subscriptions 
+                SET cancellation_date = NOW()
+                WHERE id = %s
+            """, (subscription['id'],))
+            
+            # Return success with cancellation details
+            current_period_end = datetime.fromtimestamp(stripe_response.current_period_end)
+            formatted_date = current_period_end.strftime("%Y-%m-%d")
+            
+            return {
+                "status": "success", 
+                "message": f"Subscription will be cancelled at the end of the current billing period ({formatted_date})",
+                "expiration_date": formatted_date
+            }
+        except stripe.error.StripeError as e:
+            logger.error(f"Stripe error while cancelling subscription: {str(e)}")
+            raise HTTPException(status_code=500, detail="Failed to cancel subscription with Stripe")
+            
+    except Exception as e:
+        logger.error(f"Error cancelling subscription: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to cancel subscription")

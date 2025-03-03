@@ -12,11 +12,11 @@ NC='\033[0m' # No Color
 # Store the root directory
 ROOT_DIR=$(pwd)
 
-echo -e "${BLUE}Starting LLM-DOCS services...${NC}"
+echo -e "${BLUE}Starting Twitter Forecast services...${NC}"
 
 # Start backend
 echo -e "${GREEN}Starting backend service...${NC}"
-cd "$ROOT_DIR/backend" && uvicorn main:app --reload --port 8000 &
+cd "$ROOT_DIR/backend" && uvicorn main:app --reload --port 8001 &
 BACKEND_PID=$!
 
 # Check if backend started successfully
@@ -40,7 +40,7 @@ if ! ps -p $FRONTEND_PID > /dev/null; then
 fi
 
 echo -e "${GREEN}All services started successfully!${NC}"
-echo -e "${BLUE}Backend running at:${NC} http://localhost:8000"
+echo -e "${BLUE}Backend running at:${NC} http://localhost:8001"
 echo -e "${BLUE}Frontend running at:${NC} http://localhost:5173"
 
 # Keep script running

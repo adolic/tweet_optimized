@@ -220,6 +220,14 @@
                     Tweet Optimizer
                 </a>
                 
+                <!-- Account management link -->
+                <a 
+                    href="/account"
+                    class="btn variant-ghost w-full text-left mb-2"
+                >
+                    Account Settings
+                </a>
+                
                 <!-- Upgrade option in the menu for free users -->
                 {#if isFreePlan}
                     <button 
