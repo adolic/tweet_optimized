@@ -1,4 +1,4 @@
-# Frontend
+# Frontend for tweet-optimize.com
 location / {
     proxy_pass http://tweet-optimizer-frontend:80;
     proxy_http_version 1.1;
@@ -15,7 +15,7 @@ location / {
     proxy_connect_timeout 75s;
 }
 
-# Backend API
+# Backend API for tweet-optimize.com
 location /api {
     rewrite ^/api/?(.*)$ /$1 break;
     proxy_pass http://tweet-optimizer-backend:8000;
@@ -50,7 +50,7 @@ location /api {
     add_header 'Access-Control-Expose-Headers' 'Content-Length,Content-Range' always;
 }
 
-# Health check endpoint
+# Health check endpoint for tweet-optimize.com
 location /health {
     access_log off;
     add_header Content-Type text/plain;
