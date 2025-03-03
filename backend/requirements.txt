@@ -1,0 +1,11 @@
+sentence-transformers
+pandas
+numpy==2.1
+scipy
+scikit-learn
+lightgbm
+matplotlib
+psycopg2-binary
+python-dotenv
+playwright
+
