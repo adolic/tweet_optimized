@@ -16,6 +16,9 @@
     let lastRefreshTime: number = 0;
     const REFRESH_INTERVAL = 30000; // Refresh every 30 seconds
     
+    // Track checkout process state
+    let isUpgradeInProgress: boolean = false;
+    
     // Check if user is on free plan
     $: isFreePlan = quotaData?.stats?.subscription?.plan_name === 'Free';
     
@@ -35,8 +38,21 @@
         user.logout();
     }
     
-    function handleUpgrade() {
-        redirectToStripeCheckout();
+    async function handleUpgrade() {
+        if (isUpgradeInProgress) return;
+        
+        isUpgradeInProgress = true;
+        try {
+            await redirectToStripeCheckout();
+        } catch (error) {
+            console.error('Error during checkout process:', error);
+            alert('There was a problem initiating the checkout process. Please try again.');
+        } finally {
+            // Reset in case the redirection didn't happen
+            setTimeout(() => {
+                isUpgradeInProgress = false;
+            }, 5000);
+        }
     }
     
     // Fetch user quota information
@@ -169,8 +185,14 @@
             <button
                 class="btn variant-filled-primary"
                 on:click={handleUpgrade}
+                disabled={isUpgradeInProgress}
             >
-                Upgrade
+                {#if isUpgradeInProgress}
+                    <div class="spinner-border" />
+                    <span class="ml-2">Processing...</span>
+                {:else}
+                    Upgrade
+                {/if}
             </button>
         {/if}
         
@@ -203,8 +225,14 @@
                     <button 
                         class="btn variant-ghost-primary w-full text-left mb-2"
                         on:click={handleUpgrade}
+                        disabled={isUpgradeInProgress}
                     >
-                        Upgrade to Premium
+                        {#if isUpgradeInProgress}
+                            <div class="spinner-border" />
+                            <span class="ml-2">Processing...</span>
+                        {:else}
+                            Upgrade to Premium
+                        {/if}
                     </button>
                 {/if}
                 
@@ -228,5 +256,19 @@
 <style lang="postcss">
     [data-popup] {
         @apply w-48;
+    }
+    
+    .spinner-border {
+        display: inline-block;
+        width: 1rem;
+        height: 1rem;
+        border: 0.15em solid currentColor;
+        border-right-color: transparent;
+        border-radius: 50%;
+        animation: spinner-border 0.75s linear infinite;
+    }
+    
+    @keyframes spinner-border {
+        to { transform: rotate(360deg); }
     }
 </style> 

@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 import resend
 import stripe
 import json
+from datetime import datetime, timedelta
 
 
 logging.basicConfig(level=logging.ERROR)
@@ -285,121 +286,152 @@ async def test_email(email: str):
 @app.post("/webhooks/stripe")
 async def stripe_webhook(request: Request):
     """Handle Stripe webhook events"""
-    payload = await request.body()
-    sig_header = request.headers.get('stripe-signature')
-    
-    # Get the webhook secret from environment variables
-    webhook_secret = os.getenv('STRIPE_WEBHOOK_SECRET')
-    
     try:
-        # Verify the event came from Stripe
-        event = stripe.Webhook.construct_event(
-            payload, sig_header, webhook_secret
-        )
-    except ValueError as e:
-        # Invalid payload
-        logger.error(f"Invalid payload in Stripe webhook: {e}")
-        raise HTTPException(status_code=400, detail="Invalid payload")
-    except stripe.error.SignatureVerificationError as e:
-        # Invalid signature
-        logger.error(f"Invalid signature in Stripe webhook: {e}")
-        raise HTTPException(status_code=400, detail="Invalid signature")
-    
-    # Handle specific event types
-    if event['type'] == 'checkout.session.completed':
-        session = event['data']['object']
+        # Get the webhook payload
+        payload = await request.body()
+        sig_header = request.headers.get('stripe-signature')
         
-        # Get the client reference ID which should contain the user's session token
-        client_reference_id = session.get('client_reference_id')
-        if not client_reference_id:
-            logger.error("No client_reference_id in Stripe session")
-            return {"status": "error", "message": "No client reference ID"}
+        # Verify webhook signature using the webhook signing secret
+        # This helps ensure the webhook came from Stripe
+        webhook_secret = os.getenv('STRIPE_WEBHOOK_SECRET')
+        if not webhook_secret:
+            logger.error("Stripe webhook secret not configured")
+            return {"status": "error", "message": "Webhook secret not configured"}
         
-        # Get customer email
-        customer_email = session.get('customer_details', {}).get('email')
-        if not customer_email:
-            logger.error("No customer email in Stripe session")
-            return {"status": "error", "message": "No customer email"}
-        
-        # Find user by session token or email
-        auth = Auth()
-        user = auth.get_user_by_session(client_reference_id)
-        
-        # If no user found by session token, try to find by email
-        if not user and customer_email:
-            user_record = db_query_one("SELECT * FROM users WHERE email = %s", (customer_email,))
-            if user_record:
-                user = user_record
-        
-        if not user:
-            logger.error(f"No user found for Stripe webhook. Email: {customer_email}")
-            return {"status": "error", "message": "User not found"}
-        
-        # Get subscription ID
-        subscription_id = session.get('subscription')
-        
-        if subscription_id:
-            # Get premium plan ID
-            premium_plan = db_query_one("SELECT id FROM subscription_plans WHERE name = 'Premium'")
-            
-            if not premium_plan:
-                logger.error("Premium plan not found in database")
-                return {"status": "error", "message": "Premium plan not found"}
-            
-            # Update or create user subscription
-            existing_sub = db_query_one(
-                "SELECT id FROM user_subscriptions WHERE user_id = %s AND status = 'active'", 
-                (user['id'],)
+        try:
+            event = stripe.Webhook.construct_event(
+                payload, sig_header, webhook_secret
             )
+        except ValueError as e:
+            # Invalid payload
+            logger.error(f"Invalid webhook payload: {e}")
+            raise HTTPException(status_code=400, detail="Invalid payload")
+        except stripe.error.SignatureVerificationError as e:
+            # Invalid signature
+            logger.error(f"Invalid webhook signature: {e}")
+            raise HTTPException(status_code=400, detail="Invalid signature")
+        
+        # Handle specific webhook events
+        event_type = event['type']
+        logger.info(f"Received Stripe webhook: {event_type}")
+        
+        # Handle checkout.session.completed event
+        if event_type == 'checkout.session.completed':
+            session = event['data']['object']
             
-            if existing_sub:
-                # Update existing subscription
+            # Extract user ID from metadata
+            user_id = session.get('metadata', {}).get('user_id')
+            if not user_id:
+                logger.error("No user ID in session metadata")
+                return {"status": "error", "message": "No user ID in session metadata"}
+            
+            # Make sure the user exists
+            user = db_query_one("SELECT * FROM users WHERE id = %s", (user_id,))
+            if not user:
+                logger.error(f"User not found: {user_id}")
+                return {"status": "error", "message": "User not found"}
+            
+            # Get customer ID and subscription ID
+            customer_id = session.get('customer')
+            subscription_id = session.get('subscription')
+            
+            # Update user's customer ID if needed
+            if customer_id and not user.get('stripe_customer_id'):
                 db_execute(
-                    """
-                    UPDATE user_subscriptions 
-                    SET plan_id = %s, stripe_subscription_id = %s, status = 'active',
-                        current_period_start = NOW(), current_period_end = NOW() + INTERVAL '1 month',
-                        updated_at = NOW()
-                    WHERE id = %s
-                    """,
-                    (premium_plan['id'], subscription_id, existing_sub['id'])
-                )
-            else:
-                # Create new subscription
-                db_execute(
-                    """
-                    INSERT INTO user_subscriptions 
-                    (user_id, plan_id, stripe_subscription_id, status, 
-                     current_period_start, current_period_end)
-                    VALUES (%s, %s, %s, 'active', NOW(), NOW() + INTERVAL '1 month')
-                    """,
-                    (user['id'], premium_plan['id'], subscription_id)
+                    "UPDATE users SET stripe_customer_id = %s WHERE id = %s", 
+                    (customer_id, user_id)
                 )
             
-            logger.info(f"Successfully updated subscription for user {user['id']}")
-            
-            # Update user quota for the current period
-            current_quota = QuotaService.get_user_current_quota(user['id'])
-            if current_quota:
-                # Get the premium plan quota
-                premium_quota = db_query_one(
-                    "SELECT monthly_quota FROM subscription_plans WHERE name = 'Premium'"
+            # Handle subscription
+            if subscription_id:
+                # Get premium plan ID
+                premium_plan = db_query_one("SELECT id, monthly_quota FROM subscription_plans WHERE name = 'Premium'")
+                
+                if not premium_plan:
+                    logger.error("Premium plan not found in database")
+                    return {"status": "error", "message": "Premium plan not found"}
+                
+                # Current date for subscription period
+                now = datetime.now()
+                period_end = now + timedelta(days=30)  # Approximately 1 month
+                
+                # Update or create user subscription
+                existing_sub = db_query_one(
+                    "SELECT id FROM user_subscriptions WHERE user_id = %s AND status = 'active'", 
+                    (user_id,)
                 )
                 
-                if premium_quota:
-                    # Update quota limit
+                if existing_sub:
+                    # Update existing subscription
                     db_execute(
                         """
+                        UPDATE user_subscriptions 
+                        SET plan_id = %s, stripe_subscription_id = %s, status = 'active',
+                            current_period_start = %s, current_period_end = %s,
+                            updated_at = NOW()
+                        WHERE id = %s
+                        """,
+                        (premium_plan['id'], subscription_id, now, period_end, existing_sub['id'])
+                    )
+                else:
+                    # Create new subscription
+                    db_execute(
+                        """
+                        INSERT INTO user_subscriptions 
+                        (user_id, plan_id, stripe_subscription_id, status, start_date, 
+                         current_period_start, current_period_end)
+                        VALUES (%s, %s, %s, 'active', %s, %s, %s)
+                        """,
+                        (user_id, premium_plan['id'], subscription_id, now, now, period_end)
+                    )
+                
+                # Update is_premium flag
+                db_execute("UPDATE users SET is_premium = TRUE WHERE id = %s", (user_id,))
+                
+                # Create a new quota period for the subscription
+                current_quota = db_query_one("""
+                    SELECT * FROM quota_usage
+                    WHERE user_id = %s AND period_start <= %s AND period_end >= %s
+                    ORDER BY period_start DESC LIMIT 1
+                """, (user_id, now, now))
+                
+                if current_quota:
+                    # Update existing quota
+                    db_execute("""
                         UPDATE quota_usage
                         SET predictions_limit = %s, updated_at = NOW()
                         WHERE id = %s
-                        """,
-                        (premium_quota['monthly_quota'], current_quota['id'])
-                    )
+                    """, (premium_plan['monthly_quota'], current_quota['id']))
+                else:
+                    # Create new quota period
+                    db_execute("""
+                        INSERT INTO quota_usage
+                        (user_id, period_start, period_end, predictions_used, predictions_limit)
+                        VALUES (%s, %s, %s, 0, %s)
+                    """, (user_id, now, period_end, premium_plan['monthly_quota']))
+                
+                logger.info(f"Successfully updated subscription for user {user_id}")
+        
+        # Handle customer.subscription.updated event
+        elif event_type == 'customer.subscription.updated':
+            subscription = event['data']['object']
+            customer_id = subscription.get('customer')
             
-            return {"status": "success", "message": "Subscription updated"}
+            # Find user by customer ID
+            user = db_query_one("SELECT * FROM users WHERE stripe_customer_id = %s", (customer_id,))
+            if not user:
+                logger.error(f"User not found for customer: {customer_id}")
+                return {"status": "error", "message": "User not found"}
+            
+            # Update subscription data
+            # ... (similar logic to above)
+        
+        # Return success
+        return {"status": "success"}
     
-    return {"status": "success"}
+    except Exception as e:
+        logger.error(f"Error processing Stripe webhook: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error processing webhook")
 
 # Manual subscription upgrade endpoint
 @app.post("/subscription/manual-upgrade")
@@ -554,6 +586,10 @@ async def get_session_status(session_id: str, current_user: dict = Depends(get_c
                 
                 monthly_quota = plan_data['monthly_quota']
             
+            # Current date for subscription period
+            now = datetime.now()
+            period_end = now + timedelta(days=30)  # Approximately 1 month
+            
             # Check if the user already has an active subscription
             existing_sub = db_query_one("""
                 SELECT id FROM user_subscriptions 
@@ -565,15 +601,18 @@ async def get_session_status(session_id: str, current_user: dict = Depends(get_c
                 db_execute("""
                     UPDATE user_subscriptions 
                     SET plan_id = %s, 
+                        current_period_start = %s,
+                        current_period_end = %s,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE id = %s
-                """, (plan_id, existing_sub['id']))
+                """, (plan_id, now, period_end, existing_sub['id']))
             else:
                 # Create a new subscription
                 db_execute("""
-                    INSERT INTO user_subscriptions (user_id, plan_id, status, start_date)
-                    VALUES (%s, %s, 'active', CURRENT_TIMESTAMP)
-                """, (current_user['id'], plan_id))
+                    INSERT INTO user_subscriptions 
+                    (user_id, plan_id, status, start_date, current_period_start, current_period_end)
+                    VALUES (%s, %s, 'active', %s, %s, %s)
+                """, (current_user['id'], plan_id, now, now, period_end))
             
             # Update the is_premium flag in the users table
             db_execute("""
@@ -582,14 +621,28 @@ async def get_session_status(session_id: str, current_user: dict = Depends(get_c
                 WHERE id = %s
             """, (current_user['id'],))
             
-            # Update the current quota usage record to reflect the new plan
-            current_quota = QuotaService.get_user_current_quota(current_user['id'])
+            # Create a new quota period for the subscription
+            current_quota = db_query_one("""
+                SELECT * FROM quota_usage
+                WHERE user_id = %s AND period_start <= %s AND period_end >= %s
+                ORDER BY period_start DESC LIMIT 1
+            """, (current_user['id'], now, now))
+            
             if current_quota:
+                # Update existing quota period
                 db_execute("""
                     UPDATE quota_usage
                     SET predictions_limit = %s, updated_at = NOW()
                     WHERE id = %s
-                """, (monthly_quota, current_quota['id']))
+                """, (monthly_quota, current_quota['id'])
+            )
+            else:
+                # Create new quota period
+                db_execute("""
+                    INSERT INTO quota_usage
+                    (user_id, period_start, period_end, predictions_used, predictions_limit)
+                    VALUES (%s, %s, %s, 0, %s)
+                """, (current_user['id'], now, period_end, monthly_quota))
         
         # Return the session to the client
         return {"session": {

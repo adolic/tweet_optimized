@@ -12,26 +12,22 @@ class QuotaService:
     def get_user_current_quota(user_id: int) -> Dict[str, Any]:
         """
         Get the current quota period data for a user.
-        If no quota period exists for the current month, create one.
+        If no quota period exists for the current period, create one.
         """
-        # Calculate the current period (month)
+        # Check if a quota period already exists that covers today
         now = datetime.now()
-        start_of_month = datetime(now.year, now.month, 1)
-        if now.month == 12:
-            end_of_month = datetime(now.year + 1, 1, 1) - timedelta(days=1)
-        else:
-            end_of_month = datetime(now.year, now.month + 1, 1) - timedelta(days=1)
         
-        # Check if a quota period already exists for this month
+        # First, check for an active period that includes today
         quota = db_query("""
             SELECT * FROM quota_usage 
-            WHERE user_id = %s AND period_start = %s AND period_end = %s
-        """, (user_id, start_of_month, end_of_month))
+            WHERE user_id = %s AND period_start <= %s AND period_end >= %s
+            ORDER BY period_start DESC LIMIT 1
+        """, (user_id, now, now))
         
         if quota:
             return quota[0]
         
-        # No quota period exists, need to create one
+        # No active quota period exists, need to create one
         # First, determine the user's subscription plan
         subscription = db_query("""
             SELECT us.*, sp.monthly_quota
@@ -60,19 +56,23 @@ class QuotaService:
         else:
             monthly_quota = subscription[0]['monthly_quota']
         
-        # Create the quota period
+        # Create the quota period - start from today, end in 1 month
+        period_start = now
+        period_end = now + timedelta(days=30)  # Approximately 1 month
+        
         db_execute("""
             INSERT INTO quota_usage 
             (user_id, period_start, period_end, predictions_used, predictions_limit)
             VALUES (%s, %s, %s, 0, %s)
-            RETURNING *
-        """, (user_id, start_of_month, end_of_month, monthly_quota))
+        """, (user_id, period_start, period_end, monthly_quota))
         
         # Get the created quota
         quota = db_query("""
             SELECT * FROM quota_usage 
-            WHERE user_id = %s AND period_start = %s AND period_end = %s
-        """, (user_id, start_of_month, end_of_month))
+            WHERE user_id = %s
+            ORDER BY period_start DESC
+            LIMIT 1
+        """, (user_id,))
         
         return quota[0]
     
