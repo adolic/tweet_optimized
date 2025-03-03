@@ -14,6 +14,7 @@ FROM node:18-alpine
 WORKDIR /app
 RUN npm install -g serve
 
+# Copy the build output from the build stage
 COPY --from=build /app/build ./build
 
 EXPOSE 80
