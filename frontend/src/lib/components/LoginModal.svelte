@@ -73,7 +73,7 @@
             <label class="label mb-4">
                 <span>Email</span>
                 <input
-                    class="input"
+                    class="input improved-input"
                     type="email"
                     placeholder="Enter your email"
                     bind:value={email}
@@ -98,5 +98,18 @@
 <style>
     .w-modal {
         min-width: min(400px, 90vw);
+    }
+
+    .improved-input {
+        padding: 0.75rem !important;
+        border-radius: 0.5rem !important;
+        background-color: rgba(255, 255, 255, 0.05) !important;
+        border: 1px solid rgba(255, 255, 255, 0.15) !important;
+        transition: all 0.2s ease !important;
+    }
+    .improved-input:focus {
+        background-color: rgba(255, 255, 255, 0.1) !important;
+        border-color: rgba(var(--color-primary-500), 0.5) !important;
+        box-shadow: 0 0 0 2px rgba(var(--color-primary-500), 0.25) !important;
     }
 </style> 
