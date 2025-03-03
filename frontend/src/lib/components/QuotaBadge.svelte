@@ -19,7 +19,7 @@
         : 0;
     
     $: badgeColor = usagePercentage < 70 
-        ? 'bg-primary-500' 
+        ? 'bg-custom-primary' 
         : usagePercentage < 90 
             ? 'bg-warning-500' 
             : 'bg-error-500';
@@ -97,12 +97,17 @@
 {/if}
 
 <style>
+    /* Custom badge color that uses our theme colors */
+    .bg-custom-primary {
+        background-color: rgb(var(--color-primary-500));
+    }
+    
     .badge-quota {
         display: flex;
         align-items: center;
         justify-content: center;
         padding: 0.35rem 0.75rem;
-        border-radius: 1rem;
+        border-radius: 0.5rem;
         font-size: 0.8rem;
         font-weight: 600;
         color: white;

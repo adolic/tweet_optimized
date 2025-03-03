@@ -2,3 +2,21 @@
 @tailwind components;
 @tailwind utilities;
 @tailwind variants;
+
+/* Custom theme adjustments */
+:root [data-theme='skeleton'] {
+    /* Reduce button roundness */
+    --theme-rounded-base: 0.5rem;      /* Default buttons, inputs, etc. */
+    --theme-rounded-container: 0.5rem; /* Cards, containers, modals */
+    
+    /* Custom button colors - adjust these values as desired */
+    --color-primary-500: 76 126 212;   /* Main button color - blue shade */
+    --color-primary-600: 59 100 175;   /* Button hover state */
+    --color-primary-700: 42 75 138;    /* Button active state */
+    
+    /* Alternative option (uncomment to use): */
+    /* Purple theme */
+    /* --color-primary-500: 125 82 196;   /* Main button color - purple shade */
+    /* --color-primary-600: 105 69 164;   /* Button hover state */
+    /* --color-primary-700: 85 56 133;    /* Button active state */
+}
