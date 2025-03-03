@@ -1,6 +1,6 @@
 # Frontend for tweet-optimize.com
 location / {
-    proxy_pass http://frontend:80;
+    proxy_pass http://tweet-optimizer-frontend:80;
     proxy_http_version 1.1;
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection $connection_upgrade;
@@ -18,7 +18,7 @@ location / {
 # Backend API for tweet-optimize.com
 location /api {
     rewrite ^/api/?(.*)$ /$1 break;
-    proxy_pass http://backend:8000;
+    proxy_pass http://tweet-optimizer-backend:8000;
     proxy_http_version 1.1;
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection $connection_upgrade;
