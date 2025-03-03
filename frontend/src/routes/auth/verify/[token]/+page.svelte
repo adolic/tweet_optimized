@@ -9,7 +9,7 @@
     let error: string | null = null;
 
     async function verifyToken(token: string, email: string) {
-        const response = await fetch(`/api/auth/verify`, {
+        const response = await fetch(`${env.PUBLIC_API_URL}/auth/verify`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -44,7 +44,7 @@
             
             // Only update user state if verification was successful
             if (data.success && data.session_token) {
-                user.setSessionToken(data.session_token);
+                await user.setSessionToken(data.session_token);
                 goto('/optimizer');
             } else {
                 throw new Error('Invalid response from server');
