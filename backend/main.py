@@ -214,13 +214,136 @@ async def get_user_quota(
         # Get user_id from the current user
         user_id = current_user['id']
         
-        # Add query param to bypass cache in database query if forcing refresh
-        quota_info = QuotaService.can_make_prediction(user_id)
-        stats = QuotaService.get_user_stats(user_id)
+        # Get all user stats in a single query instead of multiple queries
+        # This replaces both QuotaService.can_make_prediction and QuotaService.get_user_stats
+        stats = db_query_one("""
+            WITH 
+            -- Get current active subscription
+            current_sub AS (
+                SELECT 
+                    us.id as subscription_id, 
+                    us.status as subscription_status,
+                    us.current_period_start,
+                    us.current_period_end,
+                    us.cancellation_date,
+                    sp.id as plan_id,
+                    sp.name as plan_name, 
+                    sp.description as plan_description, 
+                    sp.monthly_quota
+                FROM user_subscriptions us
+                JOIN subscription_plans sp ON us.plan_id = sp.id
+                WHERE us.user_id = %s AND us.status = 'active'
+                ORDER BY us.created_at DESC
+                LIMIT 1
+            ),
+            -- Get current quota period
+            current_quota AS (
+                SELECT 
+                    id as quota_id,
+                    predictions_used,
+                    predictions_limit,
+                    period_start,
+                    period_end
+                FROM quota_usage
+                WHERE user_id = %s
+                ORDER BY period_start DESC
+                LIMIT 1
+            )
+            -- Combine all data
+            SELECT 
+                -- Subscription data
+                cs.subscription_id,
+                cs.subscription_status,
+                cs.current_period_start,
+                cs.current_period_end,
+                cs.cancellation_date,
+                cs.plan_id,
+                cs.plan_name,
+                cs.plan_description,
+                cs.monthly_quota,
+                -- Quota data
+                cq.quota_id,
+                cq.predictions_used,
+                cq.predictions_limit,
+                cq.period_start,
+                cq.period_end
+            FROM current_sub cs
+            FULL OUTER JOIN current_quota cq ON TRUE
+        """, (user_id, user_id))
+        
+        # If no stats found, create a default quota period
+        if not stats or not stats.get('quota_id'):
+            # This can happen if user has no quota yet
+            # Create a default quota period
+            now = datetime.now()
+            
+            # Determine monthly quota (free plan if no subscription)
+            monthly_quota = stats.get('monthly_quota') if stats else 5  # Default to 5 for free plan
+            
+            # Create the quota period
+            period_start = now
+            period_end = now + timedelta(days=30)
+            
+            quota_id = db_query_one("""
+                INSERT INTO quota_usage 
+                (user_id, period_start, period_end, predictions_used, predictions_limit)
+                VALUES (%s, %s, %s, 0, %s)
+                RETURNING id
+            """, (user_id, period_start, period_end, monthly_quota))['id']
+            
+            # Get the complete stats again with the new quota
+            return await get_user_quota(current_user, response, True)
+        
+        # Format the quota info
+        quota_info = {
+            'allowed': stats.get('predictions_used', 0) < stats.get('predictions_limit', 0),
+            'remaining': stats.get('predictions_limit', 0) - stats.get('predictions_used', 0),
+            'reason': None if stats.get('predictions_used', 0) < stats.get('predictions_limit', 0) else "Monthly prediction quota exceeded"
+        }
+        
+        # Format the user stats
+        user_stats = {
+            'current_quota': {
+                'id': stats.get('quota_id'),
+                'predictions_used': stats.get('predictions_used', 0),
+                'predictions_limit': stats.get('predictions_limit', 0),
+                'period_start': stats.get('period_start'),
+                'period_end': stats.get('period_end')
+            },
+            'total_predictions': stats.get('predictions_used', 0),
+            'recent_predictions': [],
+            'subscription': {
+                'id': stats.get('subscription_id'),
+                'status': stats.get('subscription_status'),
+                'plan_id': stats.get('plan_id'),
+                'plan_name': 'Free' if not stats.get('subscription_id') else stats.get('plan_name'),
+                'description': stats.get('plan_description'),
+                'monthly_quota': stats.get('monthly_quota', 5),  # Default to 5 for free plan
+                'current_period_start': stats.get('current_period_start'),
+                'current_period_end': stats.get('current_period_end'),
+                'cancellation_date': stats.get('cancellation_date')
+            }
+        }
+        
+        # Format subscription info for the frontend
+        subscription_info = None
+        if stats.get('subscription_id'):
+            is_cancelled = stats.get('cancellation_date') is not None
+            period_end = stats.get('current_period_end')
+            
+            subscription_info = {
+                "plan_name": stats.get('plan_name'),
+                "is_cancelled": is_cancelled,
+                "current_period_end": period_end.isoformat() if period_end else None,
+                "monthly_quota": stats.get('monthly_quota'),
+                # If cancelled, it expires at period_end, if active it renews at period_end
+                "status_message": f"{'Expires' if is_cancelled else 'Renews'} on {period_end.strftime('%B %d, %Y')}" if period_end else None
+            }
         
         return {
             "quota": quota_info,
-            "stats": stats
+            "stats": user_stats,
+            "subscription": subscription_info
         }
     except Exception as e:
         logger.error(f"Error in get_user_quota: {str(e)}")
@@ -382,9 +505,8 @@ async def stripe_webhook(request: Request):
                     db_execute(
                         """
                         INSERT INTO user_subscriptions 
-                        (user_id, plan_id, stripe_subscription_id, status, start_date, 
-                         current_period_start, current_period_end)
-                        VALUES (%s, %s, %s, 'active', %s, %s, %s)
+                        (user_id, plan_id, stripe_subscription_id, status, current_period_start, current_period_end)
+                        VALUES (%s, %s, %s, 'active', %s, %s)
                         """,
                         (user_id, premium_plan['id'], subscription_id, now, now, period_end)
                     )
@@ -427,10 +549,133 @@ async def stripe_webhook(request: Request):
                 logger.error(f"User not found for customer: {customer_id}")
                 return {"status": "error", "message": "User not found"}
             
-            # Update subscription data
-            # ... (similar logic to above)
+            # Get the subscription details
+            subscription_id = subscription.get('id')
+            current_period_start = datetime.fromtimestamp(subscription.get('current_period_start', 0))
+            current_period_end = datetime.fromtimestamp(subscription.get('current_period_end', 0))
+            status = subscription.get('status')
+            cancel_at_period_end = subscription.get('cancel_at_period_end', False)
+
+            # Get the user's current subscription record
+            user_subscription = db_query_one("""
+                SELECT us.*, sp.monthly_quota
+                FROM user_subscriptions us
+                JOIN subscription_plans sp ON us.plan_id = sp.id
+                WHERE us.user_id = %s AND us.stripe_subscription_id = %s
+            """, (user['id'], subscription_id))
+
+            if not user_subscription:
+                logger.error(f"No subscription found for user {user['id']} with Stripe ID {subscription_id}")
+                return {"status": "error", "message": "Subscription not found"}
+
+            # Update the subscription periods and status
+            db_execute("""
+                UPDATE user_subscriptions 
+                SET current_period_start = %s,
+                    current_period_end = %s,
+                    status = %s,
+                    cancellation_date = CASE WHEN %s THEN NOW() ELSE NULL END,
+                    updated_at = NOW()
+                WHERE id = %s
+            """, (current_period_start, current_period_end, status, cancel_at_period_end, user_subscription['id']))
+
+            # Create or update quota for the new period
+            current_quota = db_query_one("""
+                SELECT * FROM quota_usage
+                WHERE user_id = %s AND period_start <= %s AND period_end >= %s
+                ORDER BY period_start DESC LIMIT 1
+            """, (user['id'], current_period_start, current_period_start))
+
+            if current_quota:
+                # Update existing quota period
+                db_execute("""
+                    UPDATE quota_usage
+                    SET predictions_limit = %s,
+                        period_start = %s,
+                        period_end = %s,
+                        predictions_used = 0,
+                        updated_at = NOW()
+                    WHERE id = %s
+                """, (user_subscription['monthly_quota'], current_period_start, current_period_end, current_quota['id']))
+            else:
+                # Create new quota period
+                db_execute("""
+                    INSERT INTO quota_usage
+                    (user_id, period_start, period_end, predictions_used, predictions_limit)
+                    VALUES (%s, %s, %s, 0, %s)
+                """, (user['id'], current_period_start, current_period_end, user_subscription['monthly_quota']))
+
+            logger.info(f"Successfully updated subscription and quota for user {user['id']}")
+
+            return {"status": "success"}
         
-        # Return success
+        # Handle customer.subscription.deleted event
+        elif event_type == 'customer.subscription.deleted':
+            subscription = event['data']['object']
+            customer_id = subscription.get('customer')
+            
+            # Find user by customer ID
+            user = db_query_one("SELECT * FROM users WHERE stripe_customer_id = %s", (customer_id,))
+            if not user:
+                logger.error(f"User not found for customer: {customer_id}")
+                return {"status": "error", "message": "User not found"}
+
+            # Get the subscription details
+            subscription_id = subscription.get('id')
+            
+            # Update the subscription in our database
+            db_execute("""
+                UPDATE user_subscriptions 
+                SET status = 'cancelled',
+                    updated_at = NOW()
+                WHERE user_id = %s AND stripe_subscription_id = %s
+            """, (user['id'], subscription_id))
+            
+            logger.info(f"Marked subscription as cancelled for user {user['id']}")
+            return {"status": "success"}
+        
+        # Handle invoice.payment_failed event
+        elif event_type == 'invoice.payment_failed':
+            invoice = event['data']['object']
+            customer_id = invoice.get('customer')
+            subscription_id = invoice.get('subscription')
+            
+            if not subscription_id:
+                return {"status": "success"}  # Not a subscription invoice
+            
+            # Find user by customer ID
+            user = db_query_one("SELECT * FROM users WHERE stripe_customer_id = %s", (customer_id,))
+            if not user:
+                logger.error(f"User not found for customer: {customer_id}")
+                return {"status": "error", "message": "User not found"}
+            
+            # Update subscription status to reflect payment failure
+            db_execute("""
+                UPDATE user_subscriptions 
+                SET status = 'past_due',
+                    updated_at = NOW()
+                WHERE user_id = %s AND stripe_subscription_id = %s
+            """, (user['id'], subscription_id))
+            
+            logger.info(f"Marked subscription as past_due for user {user['id']} due to payment failure")
+            return {"status": "success"}
+        
+        # Handle customer.subscription.trial_will_end event (if you implement trials in the future)
+        elif event_type == 'customer.subscription.trial_will_end':
+            subscription = event['data']['object']
+            customer_id = subscription.get('customer')
+            
+            # Find user by customer ID
+            user = db_query_one("SELECT * FROM users WHERE stripe_customer_id = %s", (customer_id,))
+            if not user:
+                logger.error(f"User not found for customer: {customer_id}")
+                return {"status": "error", "message": "User not found"}
+            
+            # You could implement trial end notification logic here
+            logger.info(f"Trial ending soon for user {user['id']}")
+            return {"status": "success"}
+        
+        # Return success for other events
         return {"status": "success"}
     
     except Exception as e:
@@ -614,9 +859,10 @@ async def get_session_status(session_id: str, current_user: dict = Depends(get_c
                 # Create a new subscription
                 db_execute("""
                     INSERT INTO user_subscriptions 
-                    (user_id, plan_id, status, start_date, current_period_start, current_period_end)
-                    VALUES (%s, %s, 'active', %s, %s, %s)
-                """, (current_user['id'], plan_id, now, now, period_end))
+                    (user_id, plan_id, stripe_subscription_id, status, current_period_start, current_period_end)
+                    VALUES (%s, %s, %s, 'active', %s, %s)
+                """,
+                (current_user['id'], plan_id, session.subscription, now, period_end))
             
             # Update the is_premium flag in the users table
             db_execute("""

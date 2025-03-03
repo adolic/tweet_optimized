@@ -458,8 +458,21 @@
 
     // Submit the form
     async function submitForm() {
+        // Trim whitespace from tweet text
+        tweetText = tweetText.trim();
+        
         if (!tweetText) {
             error = "Please enter a tweet to forecast.";
+            return;
+        }
+        
+        if (tweetText.length < 10) {
+            error = "Tweet text must be at least 10 characters long.";
+            return;
+        }
+        
+        if (tweetText.length > 1000) {
+            error = "Tweet text cannot exceed 1000 characters.";
             return;
         }
         
@@ -724,7 +737,13 @@
                                             class="textarea improved-textarea"
                                             rows="4"
                                             placeholder="Enter your tweet text here..."
+                                            minlength="10"
+                                            maxlength="1000"
                                         ></textarea>
+                                        <div class="text-xs opacity-70 flex justify-between mt-1">
+                                            <span>Min: 10 characters</span>
+                                            <span>{tweetText ? tweetText.length : 0}/1000</span>
+                                        </div>
                                     </label>
                                     
                                     {#if error}
@@ -784,7 +803,13 @@
                                                 class="textarea improved-textarea"
                                                 rows="4"
                                                 placeholder="Enter your tweet text here..."
+                                                minlength="10"
+                                                maxlength="1000"
                                             ></textarea>
+                                            <div class="text-xs opacity-70 flex justify-between mt-1">
+                                                <span>Min: 10 characters</span>
+                                                <span>{tweetText ? tweetText.length : 0}/1000</span>
+                                            </div>
                                         </label>
                                         
                                         {#if error}

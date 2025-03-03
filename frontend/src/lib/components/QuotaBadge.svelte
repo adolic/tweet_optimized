@@ -14,9 +14,10 @@
     const API_URL = typeof env !== 'undefined' ? env.PUBLIC_API_URL : 'http://localhost:8000';
     
     // Computed values
-    $: usagePercentage = quotaData?.quota?.quota?.predictions_limit > 0 
-        ? (quotaData?.quota?.quota?.predictions_used / quotaData?.quota?.quota?.predictions_limit) * 100 
-        : 0;
+    $: remaining = quotaData?.quota?.remaining || 0;
+    $: limit = quotaData?.stats?.current_quota?.predictions_limit || 0;
+    $: used = quotaData?.stats?.current_quota?.predictions_used || 0;
+    $: usagePercentage = limit > 0 ? (used / limit) * 100 : 0;
     
     $: badgeColor = usagePercentage < 70 
         ? 'bg-custom-primary' 
@@ -52,7 +53,7 @@
 </script>
 
 <!-- Compact quota badge for header -->
-{#if quotaData && quotaData.quota && quotaData.quota.quota}
+{#if quotaData && quotaData.quota}
     <div class="flex items-center gap-2 quota-container">
         <!-- Quota badge -->
         <button 
@@ -61,7 +62,7 @@
             on:mouseenter={showPopup}
             title="Click to refresh"
         >
-            {quotaData.quota.quota.predictions_used} / {quotaData.quota.quota.predictions_limit}
+            {used} / {limit}
         </button>
 
         <!-- Popup with more details - visible based on hover state -->
@@ -79,11 +80,13 @@
                         </div>
                     </div>
                     <p class="text-xs">
-                        Resets on {formatResetDate(quotaData.quota.quota.period_end)}
+                        {#if quotaData.stats?.current_quota?.period_end}
+                            Resets on {formatResetDate(quotaData.stats.current_quota.period_end)}
+                        {/if}
                     </p>
-                    {#if quotaData.stats.subscription}
+                    {#if quotaData.subscription}
                         <p class="text-xs">
-                            Plan: {quotaData.stats.subscription.plan_name}
+                            Plan: {quotaData.subscription.plan_name}
                         </p>
                     {/if}
                 </div>

@@ -25,6 +25,7 @@
     $: isPremium = quotaData?.stats?.subscription?.plan_name === 'Premium';
     $: subscriptionPeriodEnd = quotaData?.stats?.subscription?.current_period_end;
     $: isCancelled = !!quotaData?.stats?.subscription?.cancellation_date;
+    $: statusMessage = quotaData?.stats?.subscription?.status_message;
     
     // Upgrade to premium plan
     async function handleUpgrade() {
@@ -192,7 +193,7 @@
                         </div>
                     </div>
                 {:else}
-                    <p class="mb-4">You have access to 1,000 predictions monthly{#if subscriptionPeriodEnd} until {formatDate(subscriptionPeriodEnd)}{/if}.</p>
+                    <p class="mb-4">You have access to 1,000 predictions monthly. {statusMessage}</p>
                     
                     <button
                         class="btn variant-ghost-error"
