@@ -81,7 +81,7 @@
                     </div>
                     <p class="text-xs">
                         {#if quotaData.stats?.current_quota?.period_end}
-                            Resets on {formatResetDate(quotaData.stats.current_quota.period_end)}
+                            {quotaData.subscription?.is_cancelled ? 'Expires' : 'Resets'} on {formatResetDate(quotaData.stats.current_quota.period_end)}
                         {/if}
                     </p>
                     {#if quotaData.subscription}

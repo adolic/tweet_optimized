@@ -108,6 +108,48 @@
         }
     }
     
+    // Reactivate cancelled subscription
+    async function handleReactivate() {
+        if (isProcessing) return;
+        
+        isProcessing = true;
+        try {
+            const token = getSessionToken();
+            if (!token) throw new Error('No authentication token found');
+            
+            const response = await fetch(`${API_URL}/subscription/reactivate`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                cache: 'no-cache'
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Error reactivating subscription: ${response.status}`);
+            }
+            
+            // Force refresh quota data
+            await refreshQuota();
+            
+            // Reset cancellation states
+            cancelSuccess = false;
+            cancelError = '';
+            expirationDate = '';
+            
+            // Set a flag to force refresh quota on other pages
+            if (typeof window !== 'undefined') {
+                localStorage.setItem('force_quota_refresh', 'true');
+            }
+        } catch (err) {
+            console.error('Error reactivating subscription:', err);
+            cancelError = err instanceof Error ? err.message : 'An unknown error occurred';
+        } finally {
+            isProcessing = false;
+        }
+    }
+    
     // Format date for display
     function formatDate(dateStr: string): string {
         if (!dateStr) return '';
@@ -168,19 +210,7 @@
                     <span class="badge variant-filled-primary">Active</span>
                 </div>
                 
-                {#if cancelSuccess}
-                    <div class="alert variant-ghost-warning p-4 mb-4">
-                        <div class="flex items-center gap-4">
-                            <div>
-                                <span class="text-2xl">✓</span>
-                            </div>
-                            <div class="flex-1">
-                                <h4 class="font-bold">Subscription Cancelled</h4>
-                                <p>Your subscription has been cancelled. You will have Premium access until {expirationDate}.</p>
-                            </div>
-                        </div>
-                    </div>
-                {:else if isCancelled}
+                {#if cancelSuccess || isCancelled}
                     <div class="alert variant-ghost-warning p-4 mb-4">
                         <div class="flex items-center gap-4">
                             <div>
@@ -189,6 +219,18 @@
                             <div class="flex-1">
                                 <h4 class="font-bold">Subscription Cancelled</h4>
                                 <p>Your subscription has been cancelled. You will have Premium access until {formatDate(subscriptionPeriodEnd)}.</p>
+                                <button
+                                    class="btn variant-filled-primary mt-4"
+                                    on:click={handleReactivate}
+                                    disabled={isProcessing}
+                                >
+                                    {#if isProcessing}
+                                        <div class="spinner-border" />
+                                        <span class="ml-2">Processing...</span>
+                                    {:else}
+                                        Reactivate Subscription
+                                    {/if}
+                                </button>
                             </div>
                         </div>
                     </div>

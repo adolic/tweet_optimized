@@ -976,3 +976,65 @@ async def cancel_subscription(current_user: dict = Depends(get_current_user)):
     except Exception as e:
         logger.error(f"Error cancelling subscription: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to cancel subscription")
+
+@app.post("/subscription/reactivate")
+async def reactivate_subscription(current_user: dict = Depends(get_current_user)):
+    """Reactivate a cancelled subscription"""
+    try:
+        # Get the user's subscription that was cancelled but still active
+        subscription = db_query_one("""
+            SELECT us.id, us.stripe_subscription_id, us.current_period_end
+            FROM user_subscriptions us
+            WHERE us.user_id = %s 
+            AND us.status = 'active'
+            AND us.cancellation_date IS NOT NULL
+        """, (current_user['id'],))
+        
+        if not subscription:
+            logger.error(f"No cancelled subscription found for user {current_user['id']}")
+            raise HTTPException(status_code=404, detail="No cancelled subscription found")
+        
+        # Handle case where we have a subscription record but no Stripe subscription ID
+        if not subscription.get('stripe_subscription_id'):
+            logger.warning(f"User {current_user['id']} has a subscription without Stripe ID")
+            
+            # Simply remove the cancellation date
+            db_execute("""
+                UPDATE user_subscriptions 
+                SET cancellation_date = NULL
+                WHERE id = %s
+            """, (subscription['id'],))
+            
+            return {
+                "status": "success",
+                "message": "Subscription reactivated successfully"
+            }
+        
+        # Otherwise, reactivate the subscription in Stripe
+        stripe_subscription_id = subscription['stripe_subscription_id']
+        try:
+            # Remove the cancel_at_period_end flag
+            stripe_response = stripe.Subscription.modify(
+                stripe_subscription_id,
+                cancel_at_period_end=False
+            )
+            
+            # Update subscription in our database
+            db_execute("""
+                UPDATE user_subscriptions 
+                SET cancellation_date = NULL
+                WHERE id = %s
+            """, (subscription['id'],))
+            
+            return {
+                "status": "success",
+                "message": "Subscription reactivated successfully"
+            }
+            
+        except stripe.error.StripeError as e:
+            logger.error(f"Stripe error while reactivating subscription: {str(e)}")
+            raise HTTPException(status_code=500, detail="Failed to reactivate subscription with Stripe")
+            
+    except Exception as e:
+        logger.error(f"Error reactivating subscription: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to reactivate subscription")
