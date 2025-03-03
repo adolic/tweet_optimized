@@ -68,11 +68,6 @@
                         Plan: {quotaData.stats.subscription.plan_name}
                     </p>
                 {/if}
-                <div class="mt-2">
-                    <a href="/subscription" class="text-xs text-primary-500 hover:underline">
-                        View Plans
-                    </a>
-                </div>
             </div>
         </div>
     </div>

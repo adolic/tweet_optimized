@@ -104,17 +104,6 @@
                 <span class="material-icons">warning</span>
                 <span>You've reached your prediction limit for this month.</span>
             </div>
-            <div class="p-4 text-center">
-                <a href="/subscription" class="btn variant-filled-primary">
-                    Upgrade Your Plan
-                </a>
-            </div>
-        </footer>
-    {:else}
-        <footer class="card-footer p-4 text-center">
-            <a href="/subscription" class="btn variant-ghost">
-                View Plans & Upgrade
-            </a>
         </footer>
     {/if}
 </div> 

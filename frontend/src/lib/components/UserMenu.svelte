@@ -99,12 +99,6 @@
                 >
                     Tweet Optimizer
                 </a>
-                <a 
-                    href="/subscription"
-                    class="btn variant-ghost w-full text-left mb-2"
-                >
-                    Subscription Plans
-                </a>
                 <button 
                     class="btn variant-ghost w-full text-left"
                     on:click={handleLogout}
@@ -116,7 +110,6 @@
     </div>
 {:else}
     <div class="flex items-center gap-2">
-        <a href="/subscription" class="btn variant-ghost">Plans</a>
         <button class="btn variant-soft-primary" on:click={showLoginModal}>
             Login
         </button>
