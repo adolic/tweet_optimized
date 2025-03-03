@@ -97,7 +97,7 @@ class QuotaService:
         }
     
     @staticmethod
-    def record_prediction(user_id: int, text: str = None, followers_count: int = None, is_verified: bool = None) -> None:
+    def record_prediction(user_id: int) -> None:
         """
         Update a user's quota usage without recording the prediction content.
         Raises an exception if the user exceeded their quota.

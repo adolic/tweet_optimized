@@ -11,7 +11,7 @@ from backend.model.utils import  preprocess_text, transform_features, evaluate, 
 
 
 class Model:
-    def __init__(self, target="views", sentece_transformer=None, max_ratio=2000):
+    def __init__(self, target="views", sentece_transformer=None, max_ratio=2000, ratio_model:bool=False):
         self.num_features = [
             "author_followers_count",
             # "author_following_count",
@@ -21,9 +21,13 @@ class Model:
             "is_blue_verified",
             # "checkmark_color",
         ]
+        self.ratio_model = ratio_model
 
         self.cat_features = []
-        self.target = target
+        if ratio_model:
+            self.target = f"ratio_{target}"
+        else:
+            self.target = target
         # self.target = "likes"
         # self.target = "retweets"
         # self.target = "comments"
@@ -64,8 +68,11 @@ class Model:
         df = df[mask].copy()
         df["text"] = df["text"].apply(preprocess_text)
 
-        df["ratio"] = df["views"] / df["author_followers_count"]
-        df = df[df["ratio"] < self.max_ratio].copy()
+        df["ratio_views"] = df["views"] / df["author_followers_count"]
+        df["ratio_likes"] = df["likes"] / df["author_followers_count"]
+        df["ratio_retweets"] = df["retweets"] / df["author_followers_count"]
+        df["ratio_comments"] = df["comments"] / df["author_followers_count"]
+        df = df[df["ratio_views"] < self.max_ratio].copy()
 
         df = transform_features(df)
         return df
@@ -170,7 +177,9 @@ class Model:
             'text_features': self.text_features,
             'text_feat': self.text_feat,
             'embedding_size': self.embedding_size,
-            'target': self.target
+            'target': self.target,
+            'max_ratio': self.max_ratio,
+            'ratio_model': self.ratio_model
         }
         
         # Save the model data
@@ -202,7 +211,8 @@ class Model:
         instance.text_features = model_data['text_features']
         instance.text_feat = model_data['text_feat']
         instance.embedding_size = model_data['embedding_size']
-        
+        instance.max_ratio = model_data['max_ratio']
+        instance.ratio_model = model_data['ratio_model']
         return instance
     
     def predict(self, data):
@@ -256,6 +266,8 @@ class Model:
         
         # Convert from log space back to original scale
         y_pred = np.expm1(y_pred_log)
+        if self.ratio_model:
+            y_pred = y_pred * X["author_followers_count"]
         
         # Return a single value if only one prediction, otherwise return array
         if len(y_pred) == 1:

@@ -36,7 +36,7 @@ train-models:
 # Direct execution of models.py with train parameter
 # Usage: make train
 train:
-	conda run -n $(CONDA_ENV_NAME) python backend/model/models.py train
+	conda run -n $(CONDA_ENV_NAME) python -m backend.model.models train
 
 run-backend:
 	conda run -n $(CONDA_ENV_NAME) uvicorn backend.main:app --reload --port 8000

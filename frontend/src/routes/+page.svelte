@@ -131,7 +131,21 @@
 			</p>
 			<button class="btn variant-filled-primary" on:click={showLoginModal}>Login to Start</button>
 		</div>
-		<div class="flex justify-center">
+		<div class="flex flex-col justify-center gap-6">
+			<!-- YouTube Video -->
+			<div class="aspect-video w-full rounded-lg overflow-hidden shadow-xl">
+				<iframe
+					width="100%"
+					height="100%"
+					src="https://www.youtube.com/embed/ywik9gSyvog"
+					title="Tweet Optimize Demo"
+					frameborder="0"
+					allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+					allowfullscreen
+				></iframe>
+			</div>
+			
+			<!-- Original Image -->
 			<img 
 				src="/table.png" 
 				alt="Tweet performance analytics" 
