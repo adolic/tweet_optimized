@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 import logging
 from typing import Optional, Dict, Any
-from .database import db_query, db_execute
+from .database import db_query, db_execute, db_query_one
 
 logger = logging.getLogger(__name__)
 
@@ -122,16 +122,77 @@ class QuotaService:
     
     @staticmethod
     def get_user_stats(user_id: int) -> Dict[str, Any]:
-        """Get usage statistics for a user"""
-        # Current quota
-        current_quota = QuotaService.get_user_current_quota(user_id)
+        """Get usage statistics for a user using a single efficient query"""
+        # Get current subscription, quota, and prediction counts in a single query
+        stats = db_query_one("""
+            WITH 
+            -- Get current active subscription
+            current_sub AS (
+                SELECT 
+                    us.id as subscription_id, 
+                    us.status as subscription_status,
+                    sp.id as plan_id,
+                    sp.name as plan_name, 
+                    sp.description as plan_description, 
+                    sp.monthly_quota
+                FROM user_subscriptions us
+                JOIN subscription_plans sp ON us.plan_id = sp.id
+                WHERE us.user_id = %s AND us.status = 'active'
+                ORDER BY us.created_at DESC
+                LIMIT 1
+            ),
+            -- Get current quota period
+            current_quota AS (
+                SELECT 
+                    id as quota_id,
+                    predictions_used,
+                    predictions_limit,
+                    period_start,
+                    period_end
+                FROM quota_usage
+                WHERE user_id = %s
+                ORDER BY period_start DESC
+                LIMIT 1
+            ),
+            -- Get total predictions count
+            total_predictions AS (
+                SELECT COUNT(*) as count 
+                FROM predictions 
+                WHERE user_id = %s
+            )
+            -- Combine all data
+            SELECT 
+                -- Subscription data
+                cs.subscription_id,
+                cs.subscription_status,
+                cs.plan_id,
+                cs.plan_name,
+                cs.plan_description,
+                cs.monthly_quota,
+                -- Quota data
+                cq.quota_id,
+                cq.predictions_used,
+                cq.predictions_limit,
+                cq.period_start,
+                cq.period_end,
+                -- Total predictions
+                tp.count as total_predictions_count
+            FROM current_sub cs
+            CROSS JOIN current_quota cq
+            CROSS JOIN total_predictions tp
+        """, (user_id, user_id, user_id))
         
-        # Get total predictions made
-        total_predictions = db_query("""
-            SELECT COUNT(*) as count FROM predictions WHERE user_id = %s
-        """, (user_id,))
+        # If no stats found, create default structure
+        if not stats:
+            # This can happen if user has no subscription or quota yet
+            # Get the current quota to ensure it exists (will create if needed)
+            current_quota = QuotaService.get_user_current_quota(user_id)
+            
+            # Try again with the fresh quota
+            return QuotaService.get_user_stats(user_id)
         
-        # Get recent predictions
+        # Get 10 most recent predictions in a separate query
+        # (This is kept separate as we only need the full records for detailed display)
         recent_predictions = db_query("""
             SELECT * FROM predictions 
             WHERE user_id = %s
@@ -139,19 +200,23 @@ class QuotaService:
             LIMIT 10
         """, (user_id,))
         
-        # Get the subscription plan
-        subscription = db_query("""
-            SELECT us.*, sp.name as plan_name, sp.description, sp.monthly_quota
-            FROM user_subscriptions us
-            JOIN subscription_plans sp ON us.plan_id = sp.id
-            WHERE us.user_id = %s AND us.status = 'active'
-            ORDER BY us.created_at DESC
-            LIMIT 1
-        """, (user_id,))
-        
+        # Format the result
         return {
-            'current_quota': current_quota,
-            'total_predictions': total_predictions[0]['count'] if total_predictions else 0,
+            'current_quota': {
+                'id': stats.get('quota_id'),
+                'predictions_used': stats.get('predictions_used', 0),
+                'predictions_limit': stats.get('predictions_limit', 0),
+                'period_start': stats.get('period_start'),
+                'period_end': stats.get('period_end')
+            },
+            'total_predictions': stats.get('total_predictions_count', 0),
             'recent_predictions': recent_predictions,
-            'subscription': subscription[0] if subscription else None
+            'subscription': {
+                'id': stats.get('subscription_id'),
+                'status': stats.get('subscription_status'),
+                'plan_id': stats.get('plan_id'),
+                'plan_name': stats.get('plan_name', 'Free'),
+                'description': stats.get('plan_description'),
+                'monthly_quota': stats.get('monthly_quota', 0)
+            }
         } 

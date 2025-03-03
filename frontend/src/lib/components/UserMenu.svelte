@@ -59,14 +59,22 @@
             const token = getSessionToken();
             if (!token) return;
             
-            const response = await fetch(`${API_URL}/user/quota`, {
+            // Construct the URL with query params
+            const url = new URL(`${API_URL}/user/quota`);
+            if (force) {
+                url.searchParams.append('force_refresh', 'true');
+            }
+            
+            const fetchOptions = {
                 method: 'GET',
                 headers: {
                     'Authorization': `Bearer ${token}`
                 },
-                // Add cache busting parameter for subscription-related refreshes
-                ...(force || isSubscriptionRelatedPage ? {cache: 'no-store'} : {})
-            });
+                // Use cache settings based on the request type
+                cache: force ? 'no-cache' as RequestCache : 'default' as RequestCache
+            };
+            
+            const response = await fetch(url.toString(), fetchOptions);
             
             if (!response.ok) {
                 if (response.status === 401) {
@@ -102,14 +110,23 @@
     
     onMount(() => {
         if ($user) {
-            // Initial fetch with force=true
-            fetchQuotaInfo(true);
+            // Check if we need to force a refresh (after subscription change)
+            const forceRefresh = typeof window !== 'undefined' && localStorage.getItem('force_quota_refresh') === 'true';
+            if (forceRefresh) {
+                // Clear the flag
+                localStorage.removeItem('force_quota_refresh');
+            }
+            
+            // Initial fetch with force=true if coming from subscription page
+            fetchQuotaInfo(forceRefresh || true);
             
             // Check if returning from a subscription flow
             if (typeof window !== 'undefined' && 
-                localStorage.getItem('pending_subscription_upgrade') === 'true') {
+                (localStorage.getItem('pending_subscription_upgrade') === 'true' || forceRefresh)) {
                 // Double-check after a short delay to ensure backend is updated
-                setTimeout(() => fetchQuotaInfo(true), 2000);
+                setTimeout(() => fetchQuotaInfo(true), 1000);
+                // Do a second refresh after a longer delay just to be extra sure
+                setTimeout(() => fetchQuotaInfo(true), 3000);
             }
             
             // Set up periodic refresh
@@ -127,7 +144,17 @@
     // Refresh when page changes
     $: {
         if ($page) {
-            fetchQuotaInfo(isSubscriptionRelatedPage);
+            // Check if we need to force a refresh
+            const forceRefresh = typeof window !== 'undefined' && localStorage.getItem('force_quota_refresh') === 'true';
+            if (forceRefresh) {
+                // Clear the flag
+                localStorage.removeItem('force_quota_refresh');
+                // Force refresh
+                fetchQuotaInfo(true);
+            } else {
+                // Regular refresh based on page
+                fetchQuotaInfo(isSubscriptionRelatedPage);
+            }
         }
     }
 </script>

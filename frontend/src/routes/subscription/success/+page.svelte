@@ -91,6 +91,12 @@
     // Redirect to optimizer after a delay
     function redirectToOptimizer() {
         upgradeStatus = 'Redirecting to dashboard...';
+        
+        // Set a flag to force refresh quota on the next page
+        if (typeof window !== 'undefined') {
+            localStorage.setItem('force_quota_refresh', 'true');
+        }
+        
         setTimeout(() => {
             goto('/optimizer');
         }, 3000);

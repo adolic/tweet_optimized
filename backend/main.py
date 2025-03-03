@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Request, Depends
+from fastapi import FastAPI, HTTPException, Request, Depends, Response
 from fastapi.middleware.cors import CORSMiddleware
 from backend.lib.database import db_query, db_execute, db_query_one
 import logging
@@ -195,11 +195,23 @@ async def get_tweet_forecast(request: Request, data: TweetPredictionRequest, cur
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/user/quota")
-async def get_user_quota(current_user: dict = Depends(get_current_user)):
-    """Get the current user's quota information"""
+async def get_user_quota(
+    current_user: dict = Depends(get_current_user),
+    response: Response = None,
+    force_refresh: bool = False
+):
+    """Get the current user's quota information with caching"""
     try:
-        quota_info = QuotaService.can_make_prediction(current_user['id'])
-        stats = QuotaService.get_user_stats(current_user['id'])
+        # Set cache headers if not forcing a refresh
+        if not force_refresh and response:
+            response.headers["Cache-Control"] = "max-age=60"  # Cache for 60 seconds
+        
+        # Get user_id from the current user
+        user_id = current_user['id']
+        
+        # Add query param to bypass cache in database query if forcing refresh
+        quota_info = QuotaService.can_make_prediction(user_id)
+        stats = QuotaService.get_user_stats(user_id)
         
         return {
             "quota": quota_info,
