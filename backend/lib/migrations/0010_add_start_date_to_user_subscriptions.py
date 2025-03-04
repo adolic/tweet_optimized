@@ -1,9 +1,9 @@
 def up():
     return """
-    -- Add your UP migration SQL here
+    ALTER TABLE user_subscriptions ADD COLUMN start_date TIMESTAMP WITH TIME ZONE DEFAULT NOW();
     """
 
 def down():
     return """
-    -- Add your DOWN migration SQL here
+    ALTER TABLE user_subscriptions DROP COLUMN start_date;
     """

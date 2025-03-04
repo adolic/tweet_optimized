@@ -11,13 +11,15 @@ class TweetGenerator:
             api_key=os.getenv("OPENAI_API_KEY")
         )
 
-    def generate_tweets(self, tweets: list[str]) -> list[str]:
+    def generate_tweets(self, tweets: list[str], custom_instructions: str = "") -> list[str]:
         tweets_str = "\n".join([f"<tweet>{tweet}</tweet>" for tweet in tweets])
+        custom_inst_prompt = Ref.custom_instructions.format(custom_instructions=custom_instructions) if custom_instructions else ""
+        system_prompt = Ref.system_prompt.format(custom_instructions=custom_inst_prompt)
         tweet_prompt = Ref.tweet_prompt.format(tweets=tweets_str)
         response = self.client.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": Ref.system_prompt},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": tweet_prompt}
             ],
             max_completion_tokens=2048,
@@ -28,6 +30,10 @@ class TweetGenerator:
 
 
 class Ref:
+    custom_instructions = """
+      please follow these instructions: {custom_instructions}
+    """
+
     system_prompt = """
     You are assistant in generating viral tweets for the user. User comes up with one or more tweets and you will try to generate similar sounding (not exact) variants of them. Output 10 variations in following format:
     <tweets>
@@ -36,6 +42,7 @@ class Ref:
     <tweet>tenth tweet</tweet>
     </tweets>
     Do not output any other format or text, strictly above output.
+    {custom_instructions}
     """
 
     tweet_prompt = """

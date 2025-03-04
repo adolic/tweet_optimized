@@ -172,9 +172,39 @@ async def get_user_data(request: Request):
 
 class TweetVariationRequest(BaseModel):
     tweets: list[TweetPredictionRequest]
+    custom_instructions: str | None = None
 
+class CustomInstructionsUpdate(BaseModel):
+    custom_instructions: str | None = None
 
+@app.get("/user/custom-instructions")
+async def get_custom_instructions(current_user: dict = Depends(get_current_user)):
+    """Get the user's custom instructions for tweet generation"""
+    try:
+        result = db_query_one(
+            "SELECT custom_instructions FROM users WHERE id = %s",
+            (current_user['id'],)
+        )
+        return {"custom_instructions": result.get('custom_instructions')}
+    except Exception as e:
+        logger.error(f"Error getting custom instructions: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
+@app.put("/user/custom-instructions")
+async def update_custom_instructions(
+    data: CustomInstructionsUpdate,
+    current_user: dict = Depends(get_current_user)
+):
+    """Update the user's custom instructions for tweet generation"""
+    try:
+        db_execute(
+            "UPDATE users SET custom_instructions = %s WHERE id = %s",
+            (data.custom_instructions, current_user['id'])
+        )
+        return {"status": "success"}
+    except Exception as e:
+        logger.error(f"Error updating custom instructions: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/tweet-variation")
 async def get_tweet_variation(request: Request, data: TweetVariationRequest, current_user: dict = Depends(get_current_user)):
@@ -187,7 +217,10 @@ async def get_tweet_variation(request: Request, data: TweetVariationRequest, cur
         author_followers_count = data.tweets[0].author_followers_count
         is_blue_verified = data.tweets[0].is_blue_verified
         tweets = [tweet.text for tweet in data.tweets]
-        variations = GENERATOR.generate_tweets(tweets)
+
+        custom_instructions = db_query_one("SELECT custom_instructions FROM users WHERE id = %s", (current_user['id'],))
+        custom_instructions = custom_instructions.get('custom_instructions')
+        variations = GENERATOR.generate_tweets(tweets, custom_instructions)
 
         variations = [
             {
@@ -201,7 +234,6 @@ async def get_tweet_variation(request: Request, data: TweetVariationRequest, cur
         predictions = MODEL.predict_bulk(variations, [0.1] + list(range(1, 25)))
         QuotaService.record_prediction(current_user['id'], cost=10)
 
-        print(predictions)
         return {
             "variations": predictions,
             "quota_remaining": quota_check['remaining'] - 10  # Subtract 10 predictions

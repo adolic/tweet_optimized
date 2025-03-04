@@ -2,6 +2,7 @@
     import { getModalStore, popup } from '@skeletonlabs/skeleton';
     import { user } from '$lib/stores/user';
     import LoginModal from './LoginModal.svelte';
+    import CustomInstructionsModal from './CustomInstructionsModal.svelte';
     import { env } from '$env/dynamic/public';
     import { onMount, afterUpdate } from 'svelte';
     import QuotaBadge from './QuotaBadge.svelte';
@@ -24,6 +25,8 @@
     
     // Look for subscription-related paths to trigger immediate refresh
     $: isSubscriptionRelatedPage = $page?.url?.pathname?.includes('subscription');
+
+    let showCustomInstructions = false;
 
     function showLoginModal() {
         modalStore.trigger({
@@ -173,7 +176,16 @@
             }
         }
     }
+
+    function closeCustomInstructions() {
+        showCustomInstructions = false;
+    }
 </script>
+
+<CustomInstructionsModal 
+    show={showCustomInstructions} 
+    on:close={closeCustomInstructions}
+/>
 
 {#if $user}
     <div class="flex items-center gap-3">
@@ -215,15 +227,23 @@
             <nav class="card p-4 shadow-xl" data-popup="user-menu">
                 <a 
                     href="/optimizer"
-                    class="btn variant-ghost w-full text-left mb-2"
+                    class="btn variant-ghost w-full text-left mb-2 px-4 py-2"
                 >
                     Tweet Optimizer
                 </a>
                 
+                <!-- Custom Instructions button -->
+                <button 
+                    class="btn variant-ghost w-full text-left mb-2 px-4 py-2"
+                    on:click={() => showCustomInstructions = true}
+                >
+                    Custom Instructions
+                </button>
+                
                 <!-- Account management link -->
                 <a 
                     href="/account"
-                    class="btn variant-ghost w-full text-left mb-2"
+                    class="btn variant-ghost w-full text-left mb-2 px-4 py-2"
                 >
                     Account Settings
                 </a>
@@ -231,7 +251,7 @@
                 <!-- Upgrade option in the menu for free users -->
                 {#if isFreePlan}
                     <button 
-                        class="btn variant-ghost-primary w-full text-left mb-2"
+                        class="btn variant-ghost-primary w-full text-left mb-2 px-4 py-2"
                         on:click={handleUpgrade}
                         disabled={isUpgradeInProgress}
                     >
@@ -245,7 +265,7 @@
                 {/if}
                 
                 <button 
-                    class="btn variant-ghost w-full text-left"
+                    class="btn variant-ghost w-full text-left px-4 py-2"
                     on:click={handleLogout}
                 >
                     Logout
