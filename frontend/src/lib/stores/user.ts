@@ -20,6 +20,44 @@ function createUserStore() {
     console.log("[UserStore] Creating user store");
     const { subscribe, set } = writable<User | null>(null);
 
+    // Helper function to delay execution
+    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+    // Helper function to check auth with retries
+    async function checkAuth(token: string, retries = 4, backoff = 5000): Promise<any> {
+        for (let i = 0; i < retries; i++) {
+            try {
+                const response = await fetch(`${env.PUBLIC_API_URL}/auth/me`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                console.log("[UserStore] Response status:", response.status);
+                
+                if (response.status === 401 || response.status === 403) {
+                    // Clear invalid token only on explicit auth errors
+                    throw new Error('Invalid authentication');
+                }
+                
+                if (!response.ok) {
+                    // For other errors, we'll retry
+                    throw new Error(`Failed to fetch user data: ${response.status}`);
+                }
+                
+                return await response.json();
+            } catch (err) {
+                console.error(`[UserStore] Attempt ${i + 1}/${retries} failed:`, err);
+                if (i < retries - 1) {
+                    // Only wait if we're going to retry
+                    await delay(backoff);
+                } else {
+                    throw err;
+                }
+            }
+        }
+    }
+
     return {
         subscribe,
         initialize: async () => {
@@ -50,21 +88,7 @@ function createUserStore() {
             }
             
             try {
-                // Fetch user data using the token
-                const response = await fetch(`${env.PUBLIC_API_URL}/auth/me`, {
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
-                });
-                
-                console.log("[UserStore] Response status:", response.status);
-                
-                if (!response.ok) {
-                    throw new Error(`Failed to fetch user data: ${response.status}`);
-                }
-                
-                const data = await response.json();
-                console.log("[UserStore] Response data:", JSON.stringify(data));
+                const data = await checkAuth(token);
                 
                 // The API returns { user: {...} } so we need to extract the user object
                 if (data && data.user) {
@@ -74,9 +98,12 @@ function createUserStore() {
                     console.log("[UserStore] Invalid user data format:", JSON.stringify(data));
                     throw new Error('Invalid user data format');
                 }
-            } catch (err) {
+            } catch (err: any) {
                 console.error('[UserStore] Error fetching user data:', err);
-                localStorage.removeItem('session_token');
+                // Only remove token if it's an explicit auth error
+                if (err.message === 'Invalid authentication') {
+                    localStorage.removeItem('session_token');
+                }
                 set(null);
             }
         },
