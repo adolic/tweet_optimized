@@ -59,6 +59,14 @@ def transform_features(x):
         x["is_blue_verified"] = x["is_blue_verified"].astype(int)
     if "checkmark_color" in x.columns:
         x["checkmark_color"] = x["checkmark_color"].map({"blue": 1, "verified": 1, "none": 0})
+
+    if "text" in x.columns:
+        x["text_char_count"] = x["text"].apply(len)
+        x["text_word_count"] = x["text"].apply(lambda x: len(str(x).split()))
+    else:
+        x["text_char_count"] = 0
+        x["text_word_count"] = 0
+    
     return x
 
 

@@ -10,8 +10,9 @@ matplotlib.use('Agg')  # Use non-interactive backend
 from backend.model.utils import  preprocess_text, transform_features, evaluate, plot_feature_importance, get_shap, compare_predictions
 
 
+
 class Model:
-    def __init__(self, target="views", sentece_transformer=None, max_ratio=2000, ratio_model:bool=False):
+    def __init__(self, target="views", sentece_transformer=None, max_ratio=2000, ratio_model:bool=False, log_target:bool=True):
         self.num_features = [
             "author_followers_count",
             # "author_following_count",
@@ -20,8 +21,11 @@ class Model:
             # "author_age_years",
             "is_blue_verified",
             # "checkmark_color",
+            "text_char_count",
+            "text_word_count"
         ]
         self.ratio_model = ratio_model
+        self.log_target = log_target
 
         self.cat_features = []
         if ratio_model:
@@ -74,7 +78,7 @@ class Model:
         df["ratio_comments"] = df["comments"] / df["author_followers_count"]
         df = df[df["ratio_views"] < self.max_ratio].copy()
 
-        df = transform_features(df)
+        # df = transform_features(df)
         return df
     
 
@@ -85,7 +89,11 @@ class Model:
         # Use the defined features from earlier
         X = df.copy()
         X = transform_features(X)
-        y = np.log1p(X[self.target])
+        if self.log_target:
+            y = np.log1p(X[self.target])
+        else:
+            y = X[self.target]
+
         X = X[self.num_features + self.cat_features + self.text_features].copy()
 
         # Use author as the group
@@ -179,7 +187,8 @@ class Model:
             'embedding_size': self.embedding_size,
             'target': self.target,
             'max_ratio': self.max_ratio,
-            'ratio_model': self.ratio_model
+            'ratio_model': self.ratio_model,
+            'log_target': self.log_target
         }
         
         # Save the model data
@@ -213,13 +222,10 @@ class Model:
         instance.embedding_size = model_data['embedding_size']
         instance.max_ratio = model_data['max_ratio']
         instance.ratio_model = model_data['ratio_model']
+        instance.log_target = model_data['log_target']
         return instance
     
     def predict(self, data):
-        import numpy as np
-        import pandas as pd
-        from backend.model.utils import transform_features, preprocess_text
-        
         # Check if model exists
         if not hasattr(self, 'model'):
             raise ValueError("Model not trained. Call train() first or load a trained model.")
@@ -265,7 +271,11 @@ class Model:
         y_pred_log = self.model.predict(X)
         
         # Convert from log space back to original scale
-        y_pred = np.expm1(y_pred_log)
+        if self.log_target:
+            y_pred = np.expm1(y_pred_log)
+        else:
+            y_pred = y_pred_log
+
         if self.ratio_model:
             y_pred = y_pred * X["author_followers_count"]
         
