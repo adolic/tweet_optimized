@@ -1,6 +1,5 @@
 <script lang="ts">
     import { page } from '$app/stores';
-    import { goto } from '$app/navigation';
     import { env } from '$env/dynamic/public';
     import { onMount } from 'svelte';
     import { user } from '$lib/stores/user';
@@ -45,7 +44,8 @@
             // Only update user state if verification was successful
             if (data.success && data.session_token) {
                 await user.setSessionToken(data.session_token);
-                goto('/optimizer');
+                // Use window.location.href for a full page refresh
+                window.location.href = '/optimizer';
             } else {
                 throw new Error('Invalid response from server');
             }
