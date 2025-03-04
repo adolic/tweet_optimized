@@ -34,8 +34,8 @@
     }> = [];
 
     // Local storage keys
-    const STORAGE_KEY_PREDICTIONS = 'tweet_optimizer_predictions';
-    const STORAGE_KEY_FORM = 'tweet_optimizer_form';
+    $: STORAGE_KEY_PREDICTIONS = $user ? `tweet_optimizer_predictions_${$user.email}` : null;
+    $: STORAGE_KEY_FORM = $user ? `tweet_optimizer_form_${$user.email}` : null;
     
     // Chart instances
     let viewsChart: Chart | null = null;
@@ -91,13 +91,15 @@
 
     // Load data from localStorage
     function loadFromLocalStorage() {
-        if (typeof window === 'undefined') return; // SSR check
+        if (typeof window === 'undefined' || !STORAGE_KEY_PREDICTIONS || !STORAGE_KEY_FORM) return; // SSR check or no user
         
         try {
             // Load predictions
             const savedPredictions = localStorage.getItem(STORAGE_KEY_PREDICTIONS);
             if (savedPredictions) {
                 predictions = JSON.parse(savedPredictions);
+            } else {
+                predictions = []; // Clear predictions if none found for this user
             }
             
             // Load form values
@@ -107,15 +109,25 @@
                 followers = formData.followers || 0;
                 tweetText = formData.tweetText || '';
                 isVerified = formData.isVerified || false;
+            } else {
+                // Reset form if no data found for this user
+                followers = 0;
+                tweetText = '';
+                isVerified = false;
             }
         } catch (err) {
             console.error('Error loading from localStorage:', err);
+            // Reset data on error
+            predictions = [];
+            followers = 0;
+            tweetText = '';
+            isVerified = false;
         }
     }
     
     // Save data to localStorage
     function saveToLocalStorage() {
-        if (typeof window === 'undefined') return; // SSR check
+        if (typeof window === 'undefined' || !STORAGE_KEY_PREDICTIONS || !STORAGE_KEY_FORM) return; // SSR check or no user
         
         try {
             // Save predictions
@@ -145,7 +157,7 @@
         predictions = [];
         
         // Clear localStorage
-        if (typeof window !== 'undefined') {
+        if (typeof window !== 'undefined' && STORAGE_KEY_PREDICTIONS && STORAGE_KEY_FORM) {
             localStorage.removeItem(STORAGE_KEY_PREDICTIONS);
             localStorage.removeItem(STORAGE_KEY_FORM);
         }
@@ -156,6 +168,25 @@
         if (retweetsChart) retweetsChart.destroy();
         if (commentsChart) commentsChart.destroy();
         
+        viewsChart = null;
+        likesChart = null;
+        retweetsChart = null;
+        commentsChart = null;
+    }
+
+    // Watch for user changes
+    $: if ($user) {
+        loadFromLocalStorage(); // Load data when user logs in
+    } else {
+        // Clear data when user logs out
+        predictions = [];
+        followers = 0;
+        tweetText = '';
+        isVerified = false;
+        if (viewsChart) viewsChart.destroy();
+        if (likesChart) likesChart.destroy();
+        if (retweetsChart) retweetsChart.destroy();
+        if (commentsChart) commentsChart.destroy();
         viewsChart = null;
         likesChart = null;
         retweetsChart = null;
