@@ -56,6 +56,7 @@ def transform_features(x):
     if "age_hours" in x.columns:
         x["age_hours"] = np.log1p(x["age_hours"])
     if "is_blue_verified" in x.columns:
+        # todo: check if this works correctly
         x["is_blue_verified"] = x["is_blue_verified"].astype(int)
     if "checkmark_color" in x.columns:
         x["checkmark_color"] = x["checkmark_color"].map({"blue": 1, "verified": 1, "none": 0})

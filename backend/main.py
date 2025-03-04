@@ -1,6 +1,8 @@
 import os
 import sys
 
+from backend.generator import TweetGenerator
+
 # Add the parent directory to sys.path to make 'backend' importable
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -31,6 +33,7 @@ load_dotenv()
 app = FastAPI()
 # MODEL = Model.load(DATA_DIR / "model.pkl")
 MODEL = Models.load(["views", "likes", "retweets", "comments"])
+GENERATOR = TweetGenerator()
 
 # Configure CORS
 app.add_middleware(
@@ -67,6 +70,7 @@ class TweetPredictionRequest(BaseModel):
     text: str
     author_followers_count: int
     is_blue_verified: bool
+
 
 # Authentication dependency
 async def get_current_user(request: Request):
@@ -164,6 +168,48 @@ async def get_user_data(request: Request):
     except Exception as e:
         logger.error(f"Error in get_user_data: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+    
+
+class TweetVariationRequest(BaseModel):
+    tweets: list[TweetPredictionRequest]
+
+
+
+
+@app.post("/tweet-variation")
+async def get_tweet_variation(request: Request, data: TweetVariationRequest, current_user: dict = Depends(get_current_user)):
+    try:
+        # Check user quota
+        quota_check = QuotaService.can_make_prediction(current_user['id'])
+        if quota_check["remaining"] < 10:
+            raise HTTPException(status_code=403, detail=quota_check['reason'])
+        
+        author_followers_count = data.tweets[0].author_followers_count
+        is_blue_verified = data.tweets[0].is_blue_verified
+        tweets = [tweet.text for tweet in data.tweets]
+        variations = GENERATOR.generate_tweets(tweets)
+
+        variations = [
+            {
+                "text": tweet,
+                "author_followers_count": author_followers_count,
+                "is_blue_verified": 1 if is_blue_verified else 0  # Convert to int for the ML model
+            }
+            for tweet in variations
+        ]
+
+        predictions = MODEL.predict_bulk(variations, [0.1] + list(range(1, 25)))
+        QuotaService.record_prediction(current_user['id'], cost=10)
+
+        print(predictions)
+        return {
+            "variations": predictions,
+            "quota_remaining": quota_check['remaining'] - 10  # Subtract 10 predictions
+        }
+    except HTTPException:
+        raise
+        
+
 
 @app.post("/tweet-forecast")
 async def get_tweet_forecast(request: Request, data: TweetPredictionRequest, current_user: dict = Depends(get_current_user)):
@@ -189,7 +235,7 @@ async def get_tweet_forecast(request: Request, data: TweetPredictionRequest, cur
         
         # Only update quota after successful prediction
         QuotaService.record_prediction(
-            user_id=current_user['id']
+            user_id=current_user['id'],
         )
         
         return {

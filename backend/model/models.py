@@ -52,7 +52,29 @@ class Models:
             predictions[target] = fmt_out
         return predictions
     
+    def predict_bulk(self, data: list[dict], age_hours: list[int]):
+        in_data = []
+        for idx, tweet in enumerate(data):
+            tw = tweet.copy()
+            tw["tweet_idx"] = idx
+            for age_hour in age_hours:
+                in_data.append({**tw, "age_hours": age_hour})
+        in_data = pd.DataFrame(in_data)
 
+        for target in self.targets:
+            model_instance = self.models[target]
+            in_data[target] = model_instance.predict(in_data)
+        
+        # we need to return [{"tweet_idx": 0, "text": "...", "views": [{"value": 100, "age_hours": 0.1} ...,
+        out = []
+        for (tweet_idx, text), values in in_data.groupby(["tweet_idx", "text"]):
+            tmp = {"tweet_idx": int(tweet_idx), "text": text}
+            for target in self.targets:
+                tmp[target] = [float(v) for v in values[target].tolist()]
+            out.append(tmp)
+        return out
+        
+    
 if __name__ == "__main__":
     import sys
     import time

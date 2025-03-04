@@ -97,7 +97,7 @@ class QuotaService:
         }
     
     @staticmethod
-    def record_prediction(user_id: int) -> None:
+    def record_prediction(user_id: int, cost: int = 1) -> None:
         """
         Update a user's quota usage without recording the prediction content.
         Raises an exception if the user exceeded their quota.
@@ -110,9 +110,9 @@ class QuotaService:
         # Update the quota usage (skip saving the prediction content)
         db_execute("""
             UPDATE quota_usage
-            SET predictions_used = predictions_used + 1, updated_at = NOW()
+            SET predictions_used = predictions_used + %s, updated_at = NOW()
             WHERE id = %s
-        """, (quota_check['quota']['id'],))
+        """, (cost, quota_check['quota']['id']))
     
     @staticmethod
     def get_user_stats(user_id: int) -> Dict[str, Any]:
