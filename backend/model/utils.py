@@ -157,7 +157,14 @@ def evaluate(directory, model, X_test, y_test, y_train):
     plt.savefig(f"{directory}/actual_vs_predicted.png", dpi=300, bbox_inches='tight')
     plt.close()
 
-    return rmse, mae, r2
+    return {
+        "rmse": rmse,
+        "mae": mae,
+        "r2": r2,
+        "baseline_rmse": baseline_rmse,
+        "baseline_mae": baseline_mae,
+        "baseline_r2": baseline_r2
+    }
 
 
 

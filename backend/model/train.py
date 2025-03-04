@@ -149,6 +149,7 @@ class Model:
         params = {
             'objective': 'regression',
             'metric': 'rmse',
+            # 'metric': 'mae',
             # 'metric': 'mse',
             'boosting_type': 'gbdt',
             'n_estimators': 500,

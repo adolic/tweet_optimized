@@ -3,23 +3,29 @@ from backend.model.train import Model
 from backend.model.utils import evaluate, plot_feature_importance, get_shap
 from backend.config import DATA_DIR
 import pandas as pd
-
+import json
 class Models:
     def __init__(self, targets: list[str]):
         self.targets = targets
         self.models = {}
 
     def train(self):
+        metrics = {}
         for target in self.targets:
             print(f"Training model for {target}")
             model_instance = Model(target=target)
             df = model_instance.get_data()
             X_train, X_test, y_train, y_test = model_instance.split_data(df)
             trained_model = model_instance.train(X_train, X_test, y_train, y_test)
-            evaluate(DATA_DIR,trained_model, X_test, y_test, y_train)
+            model_metrics = evaluate(DATA_DIR,trained_model, X_test, y_test, y_train)
             plot_feature_importance(DATA_DIR,trained_model, model_instance.num_features + model_instance.cat_features + model_instance.text_feat, model_instance.transformer)
             get_shap(DATA_DIR,trained_model, X_test, model_instance.transformer)
             model_instance.save()
+            metrics[target] = model_metrics
+        
+        # save metrics to json
+        with open(DATA_DIR / "metrics.json", "w") as f:
+            json.dump(metrics, f, indent=4)
 
     @classmethod
     def load(cls, targets: list[str]):
