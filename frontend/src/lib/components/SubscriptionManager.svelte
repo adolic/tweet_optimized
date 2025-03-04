@@ -22,7 +22,7 @@
     let expirationDate: string = '';
     
     // Determine subscription status
-    $: isPremium = quotaData?.stats?.subscription?.plan_name === 'Premium';
+    $: isPremium = quotaData?.stats?.subscription?.plan_name?.toLowerCase().includes('premium');
     $: subscriptionPeriodEnd = quotaData?.stats?.subscription?.current_period_end;
     $: isCancelled = !!quotaData?.stats?.subscription?.cancellation_date;
     $: statusMessage = quotaData?.stats?.subscription?.status_message;

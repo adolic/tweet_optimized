@@ -48,6 +48,9 @@ resend.api_key = os.getenv('RESEND_API_KEY')
 # Configure Stripe API
 stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
 
+PREMIUM_PLAN_NAME = os.getenv('PREMIUM_PLAN_NAME', 'Premium')
+STRIPE_ENV = os.getenv('STRIPE_ENV')
+
 class LoginRequest(BaseModel):
     email: str
 
@@ -472,7 +475,7 @@ async def stripe_webhook(request: Request):
             # Handle subscription
             if subscription_id:
                 # Get premium plan ID
-                premium_plan = db_query_one("SELECT id, monthly_quota FROM subscription_plans WHERE name = 'Premium'")
+                premium_plan = db_query_one(f"SELECT id, monthly_quota FROM subscription_plans WHERE name = '{PREMIUM_PLAN_NAME}'")
                 
                 if not premium_plan:
                     logger.error("Premium plan not found in database")
@@ -688,7 +691,7 @@ async def manual_subscription_upgrade(current_user: dict = Depends(get_current_u
     """Manually upgrade a user's subscription when webhook doesn't trigger"""
     try:
         # Get premium plan ID
-        premium_plan = db_query_one("SELECT id FROM subscription_plans WHERE name = 'Premium'")
+        premium_plan = db_query_one(f"SELECT id FROM subscription_plans WHERE name = '{PREMIUM_PLAN_NAME}'")
         
         if not premium_plan:
             logger.error("Premium plan not found in database")
@@ -730,7 +733,7 @@ async def manual_subscription_upgrade(current_user: dict = Depends(get_current_u
         if current_quota:
             # Get the premium plan quota
             premium_quota = db_query_one(
-                "SELECT monthly_quota FROM subscription_plans WHERE name = 'Premium'"
+                f"SELECT monthly_quota FROM subscription_plans WHERE name = '{PREMIUM_PLAN_NAME}'"
             )
             
             if premium_quota:
@@ -755,13 +758,17 @@ async def create_checkout_session(current_user: dict = Depends(get_current_user)
     """Create a Stripe checkout session for the premium subscription"""
     try:
         # Get premium plan ID
-        premium_plan = db_query_one("SELECT id, stripe_price_id, monthly_quota FROM subscription_plans WHERE name = 'Premium'")
+        premium_plan = db_query_one(f"SELECT id, stripe_price_id, monthly_quota FROM subscription_plans WHERE name = '{PREMIUM_PLAN_NAME}'")
         if not premium_plan:
             raise HTTPException(status_code=404, detail="Premium plan not found")
         
-        # Check if the user already has a Stripe customer ID
-        user_data = db_query_one("SELECT stripe_customer_id FROM users WHERE id = %s", (current_user['id'],))
-        customer_id = user_data.get('stripe_customer_id')
+        if STRIPE_ENV == 'test':
+            # this will force using test mode
+            customer_id = None
+        else:
+            # Check if the user already has a Stripe customer ID
+            user_data = db_query_one("SELECT stripe_customer_id FROM users WHERE id = %s", (current_user['id'],))
+            customer_id = user_data.get('stripe_customer_id')
         
         # If no customer ID, create a new Stripe customer
         if not customer_id:
@@ -824,7 +831,7 @@ async def get_session_status(session_id: str, current_user: dict = Depends(get_c
             plan_id = session.metadata.get('plan_id')
             if not plan_id:
                 # Fallback to looking up the premium plan
-                premium_plan = db_query_one("SELECT id, monthly_quota FROM subscription_plans WHERE name = 'Premium'")
+                premium_plan = db_query_one(f"SELECT id, monthly_quota FROM subscription_plans WHERE name = '{PREMIUM_PLAN_NAME}'")
                 plan_id = premium_plan['id']
                 monthly_quota = premium_plan['monthly_quota']
             else:

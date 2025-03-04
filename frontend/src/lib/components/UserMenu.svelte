@@ -105,7 +105,7 @@
             
             // Clear any pending subscription flag after successful refresh
             if (localStorage.getItem('pending_subscription_upgrade') === 'true' && 
-                quotaData?.stats?.subscription?.plan_name === 'Premium') {
+            quotaData?.stats?.subscription?.plan_name?.toLowerCase()?.includes('premium')) {
                 localStorage.removeItem('pending_subscription_upgrade');
             }
         } catch (err) {
