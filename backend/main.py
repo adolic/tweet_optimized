@@ -209,9 +209,11 @@ async def update_custom_instructions(
 @app.post("/tweet-variation")
 async def get_tweet_variation(request: Request, data: TweetVariationRequest, current_user: dict = Depends(get_current_user)):
     try:
+        COST_PER_VARIATION = 10
         # Check user quota
-        quota_check = QuotaService.can_make_prediction(current_user['id'])
-        if quota_check["remaining"] < 10:
+        quota_check = QuotaService.can_make_prediction(current_user['id'], cost=COST_PER_VARIATION)
+        if quota_check["remaining"] < COST_PER_VARIATION:
+            print(quota_check)
             raise HTTPException(status_code=403, detail=quota_check['reason'])
         
         author_followers_count = data.tweets[0].author_followers_count
@@ -232,7 +234,7 @@ async def get_tweet_variation(request: Request, data: TweetVariationRequest, cur
         ]
 
         predictions = MODEL.predict_bulk(variations, [0.1] + list(range(1, 25)))
-        QuotaService.record_prediction(current_user['id'], cost=10)
+        QuotaService.record_prediction(current_user['id'], cost=COST_PER_VARIATION)
 
         return {
             "variations": predictions,

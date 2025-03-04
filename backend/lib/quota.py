@@ -77,7 +77,7 @@ class QuotaService:
         return quota[0]
     
     @staticmethod
-    def can_make_prediction(user_id: int) -> Dict[str, Any]:
+    def can_make_prediction(user_id: int, cost: int = 1) -> Dict[str, Any]:
         """
         Check if a user can make a prediction based on their quota.
         Returns a dict with keys:
@@ -87,7 +87,7 @@ class QuotaService:
         """
         quota = QuotaService.get_user_current_quota(user_id)
         
-        can_predict = quota['predictions_used'] < quota['predictions_limit']
+        can_predict = (quota['predictions_used'] + cost) < quota['predictions_limit']
         
         return {
             'allowed': can_predict,
