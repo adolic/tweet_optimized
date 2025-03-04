@@ -48,6 +48,32 @@
 
     const modalStore = getModalStore();
 
+    // Add sorting state
+    let sortField: 'views' | 'likes' | 'retweets' | 'comments' | null = null;
+    let sortDirection: 'asc' | 'desc' = 'desc';
+
+    // Sort predictions based on current sort field and direction
+    $: sortedPredictions = [...predictions].sort((a, b) => {
+        if (!sortField) return 0;
+        
+        const aValue = a.prediction[sortField][a.prediction[sortField].length - 1].value;
+        const bValue = b.prediction[sortField][b.prediction[sortField].length - 1].value;
+        
+        return sortDirection === 'asc' ? aValue - bValue : bValue - aValue;
+    });
+
+    // Handle sort click
+    function handleSort(field: 'views' | 'likes' | 'retweets' | 'comments') {
+        if (sortField === field) {
+            // If clicking the same field, toggle direction
+            sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+            // If clicking a new field, set it and default to descending
+            sortField = field;
+            sortDirection = 'desc';
+        }
+    }
+
     // Function to get the session token
     function getSessionToken(): string | null {
         if (typeof window === 'undefined') return null; // SSR check
@@ -186,7 +212,7 @@
                         plugins: {
                             title: {
                                 display: true,
-                                text: title,
+                                text: predictions.length > 5 ? `${title} (showing top 5)` : title,
                                 color: 'rgba(255, 255, 255, 0.9)',
                                 font: {
                                     size: 16,
@@ -342,21 +368,34 @@
         }
         
         // Update each chart if it exists
-        if (viewsChart) {
+        if (viewsChart && viewsChart.options?.plugins?.title) {
             viewsChart.data.datasets = [];
+            viewsChart.options.plugins.title.text = predictions.length > 5 ? 'Predicted Views (showing top 5)' : 'Predicted Views';
         }
-        if (likesChart) {
+        if (likesChart && likesChart.options?.plugins?.title) {
             likesChart.data.datasets = [];
+            likesChart.options.plugins.title.text = predictions.length > 5 ? 'Predicted Likes (showing top 5)' : 'Predicted Likes';
         }
-        if (retweetsChart) {
+        if (retweetsChart && retweetsChart.options?.plugins?.title) {
             retweetsChart.data.datasets = [];
+            retweetsChart.options.plugins.title.text = predictions.length > 5 ? 'Predicted Retweets (showing top 5)' : 'Predicted Retweets';
         }
-        if (commentsChart) {
+        if (commentsChart && commentsChart.options?.plugins?.title) {
             commentsChart.data.datasets = [];
+            commentsChart.options.plugins.title.text = predictions.length > 5 ? 'Predicted Comments (showing top 5)' : 'Predicted Comments';
         }
         
-        // Add datasets for each prediction
-        predictions.forEach((pred, index) => {
+        // Sort predictions by views and take top 5
+        const top5Predictions = [...predictions]
+            .sort((a, b) => {
+                const aViews = a.prediction.views[a.prediction.views.length - 1].value;
+                const bViews = b.prediction.views[b.prediction.views.length - 1].value;
+                return bViews - aViews;
+            })
+            .slice(0, 5);
+        
+        // Add datasets for each prediction in top 5
+        top5Predictions.forEach((pred, index) => {
             // Use consistent colors for each prediction across all charts
             const hue = (index * 137.5) % 360; // Golden angle approximation for good color distribution
             const color = `hsl(${hue}, 85%, 60%)`;
@@ -888,15 +927,35 @@
                                             <th>Tweet</th>
                                             <th>Followers</th>
                                             <th>Verified</th>
-                                            <th>Views (24h)</th>
-                                            <th>Likes (24h)</th>
-                                            <th>Retweets (24h)</th>
-                                            <th>Comments (24h)</th>
+                                            <th class="cursor-pointer hover:bg-surface-500/30" on:click={() => handleSort('views')}>
+                                                Views (24h)
+                                                {#if sortField === 'views'}
+                                                    <span class="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                                                {/if}
+                                            </th>
+                                            <th class="cursor-pointer hover:bg-surface-500/30" on:click={() => handleSort('likes')}>
+                                                Likes (24h)
+                                                {#if sortField === 'likes'}
+                                                    <span class="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                                                {/if}
+                                            </th>
+                                            <th class="cursor-pointer hover:bg-surface-500/30" on:click={() => handleSort('retweets')}>
+                                                Retweets (24h)
+                                                {#if sortField === 'retweets'}
+                                                    <span class="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                                                {/if}
+                                            </th>
+                                            <th class="cursor-pointer hover:bg-surface-500/30" on:click={() => handleSort('comments')}>
+                                                Comments (24h)
+                                                {#if sortField === 'comments'}
+                                                    <span class="ml-1">{sortDirection === 'asc' ? '↑' : '↓'}</span>
+                                                {/if}
+                                            </th>
                                             <th>Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {#each predictions as pred}
+                                        {#each sortedPredictions as pred}
                                             <tr>
                                                 <td title={pred.tweet}>
                                                     <div class="flex items-center gap-2">
