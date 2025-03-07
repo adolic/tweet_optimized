@@ -1,16 +1,23 @@
-# Build stage
-FROM node:18-alpine as build
-
+# Base stage for shared configuration
+FROM node:18-alpine AS base
 WORKDIR /app
 COPY package*.json ./
-RUN npm install
 
+# Development stage
+FROM base AS development
+RUN npm install
+EXPOSE 5173
+ENV HOST=0.0.0.0
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+
+# Build stage
+FROM base AS build
+RUN npm install
 COPY . .
 RUN npm run build
 
 # Production stage - using a simple static file server
-FROM node:18-alpine
-
+FROM node:18-alpine AS production
 WORKDIR /app
 RUN npm install -g serve
 

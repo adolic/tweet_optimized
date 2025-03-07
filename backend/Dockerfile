@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.11-slim AS base
 
 # Set up the app directory
 WORKDIR /app
@@ -16,16 +16,24 @@ RUN mkdir -p /app/backend
 COPY requirements.txt /app/
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the application files into the backend directory
-COPY . /app/backend/
-
 # Set the Python path to find modules properly
 ENV PYTHONPATH=/app
 
-# Install the application in development mode
+# Development stage
+FROM base AS development
+# In development, we mount the code directory, so we don't copy files here
+WORKDIR /app
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+# Production stage
+FROM base AS production
+# Copy the application files into the backend directory
+COPY . /app/backend/
+
+# Install the application
 WORKDIR /app/backend
 RUN pip install -e .
 
 # Change back to app directory and run the application
 WORKDIR /app
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

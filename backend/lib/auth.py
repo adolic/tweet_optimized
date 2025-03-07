@@ -23,7 +23,7 @@ class VerifyRequest(BaseModel):
 
 class Auth:
     def __init__(self):
-        self.frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:5173')
+        self.frontend_url = os.getenv('FRONTEND_URL', 'http://localhost')
         self.max_attempts_per_hour = 5
         self.router = APIRouter()
         self.setup_routes()

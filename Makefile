@@ -1,7 +1,7 @@
 CONDA_ENV_NAME = tweet-optimize
 PYTHON_VERSION = 3.11
 
-.PHONY: setup setup-backend setup-frontend run-backend run-frontend migrate train-models train preview-data test
+.PHONY: setup setup-backend setup-frontend run-backend run-frontend migrate train-models train preview-data test dev dev-down
 
 setup: setup-backend setup-frontend
 
@@ -48,3 +48,13 @@ run-frontend:
 # Usage: make preview-data
 preview-data:
 	conda run -n $(CONDA_ENV_NAME) python backend/lib/db_viewer.py 
+
+# Start development environment with Docker Compose
+# Usage: make dev
+dev:
+	docker-compose -f docker-compose.dev.yaml up --build
+
+# Stop development environment and clean up
+# Usage: make dev-down
+dev-down:
+	docker-compose -f docker-compose.dev.yaml down
