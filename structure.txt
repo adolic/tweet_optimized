@@ -1,0 +1,102 @@
+# Tweet-Optimize Application
+
+## Project Overview
+Tweet-Optimize is an application that helps users predict the performance of their tweets and optimize them for better engagement. The application uses machine learning models to forecast tweet metrics (views, likes, retweets, comments) based on tweet content, follower count, and verification status. Users can also generate variations of their tweets to improve performance. The project consists of a Svelte frontend and a FastAPI backend with PostgreSQL database.
+
+## Project Structure
+
+### Frontend (Svelte)
+* Built with SvelteKit
+* Uses Tailwind CSS for styling
+* Main structure:
+  * `frontend/src/routes/` - Contains application pages/routes
+    * `auth/` - Authentication-related pages
+    * `optimizer/` - Tweet optimization interface
+    * `subscription/` - Subscription management pages
+    * `account/` - User account management
+  * `frontend/src/lib/` - Contains shared components, utilities, and stores
+  * `frontend/static/` - Static assets like images and fonts
+  * `frontend/src/app.html` - Main HTML template
+  * `frontend/src/app.postcss` - Global CSS styles
+
+### Backend (FastAPI)
+* Built with FastAPI and Python
+* Key components:
+  * `backend/main.py` - Main API entry point and route registration
+  * `backend/generator.py` - Tweet variation generator using OpenAI
+  * `backend/lib/` - Core utilities and services
+    * `database.py` - Database connection and query functions
+    * `migration_manager.py` - Handles database migrations
+    * `migrations/` - Migration files following timestamp naming convention
+    * `auth.py` - Authentication services and routes using FastAPI's APIRouter
+      * Handles login, verification, and session management
+      * Uses magic link authentication via email
+      * Rate limiting for login attempts
+      * Session token management
+    * `quota.py` - User quota management
+  * `backend/model/` - ML models for tweet performance prediction
+  * `backend/scraping/` - Web scraping utilities for data collection
+  * `backend/data/` - Data storage directory for models and datasets
+
+### Authentication System
+* Modular authentication system in `backend/lib/auth.py`
+* Features:
+  * Magic link authentication via email
+  * Rate limiting for login attempts
+  * Session management with tokens
+  * User creation and lookup
+  * Email verification
+  * Protected route middleware
+* Routes:
+  * POST `/auth/login` - Initiate login with email
+  * POST `/auth/verify` - Verify magic link token
+  * GET `/auth/me` - Get current user data
+* Integration:
+  * Uses FastAPI's APIRouter for modular route handling
+  * Routes automatically registered in main application
+  * Shared authentication dependencies for protected routes
+
+### Database Migrations
+* Custom migration system managed through `backend/lib/migration_manager.py`
+* Migration files stored in `backend/lib/migrations/`
+* Commands available through Makefile:
+  * Create migrations: `make migrate cmd="create migration_name"`
+  * Apply migrations: `make migrate cmd="up"`
+  * Rollback migrations: `make migrate cmd="down"`
+
+### Deployment & DevOps
+* Docker-based deployment with `docker-compose.yaml`
+* CI/CD scripts:
+  * `deploy.sh` - Deployment script
+  * `update.sh` - Update script for production
+  * `start.sh` - Startup script
+* SSL certificates in `ssl/` directory
+* Configuration files in `conf/` directory
+* Documented deployment process in `DEPLOYMENT.md`
+
+
+### Key Features
+* Tweet performance prediction (views, likes, retweets, comments)
+* Tweet variation generation with AI
+* Authentication system with email verification
+* Subscription management with Stripe integration
+* Quota system for API usage
+* Time-series forecasting for tweet metrics
+
+## Development Workflow
+* Use `make setup` to set up both frontend and backend
+* Run backend: `make run-backend`
+* Run frontend: `make run-frontend`
+* Database operations:
+  * Preview data: `make preview-data`
+  * Run migrations: `make migrate cmd=up`
+* Always create migrations through the `make migrate cmd="create name"` command to ensure proper timestamp and format
+* Training ML models: `make train-models`
+
+
+## Important Notes
+* Environment variables are stored in `.env` files
+* Frontend communicates with backend via API endpoints defined in `backend/main.py`
+* The project uses a conda environment named `tweet-optimize` with Python 3.11
+* When making database changes, always use the migration system rather than direct schema modifications
+* The application uses OpenAI's API for generating tweet variations

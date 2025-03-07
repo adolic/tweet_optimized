@@ -54,121 +54,18 @@ stripe.api_key = os.getenv('STRIPE_SECRET_KEY')
 PREMIUM_PLAN_NAME = os.getenv('PREMIUM_PLAN_NAME', 'Premium')
 STRIPE_ENV = os.getenv('STRIPE_ENV')
 
-class LoginRequest(BaseModel):
-    email: str
-
-class VerifyRequest(BaseModel):
-    email: str
-    code: str | None = None
-    magic_link_token: str | None = None
-
-class ToggleVisibilityRequest(BaseModel):
-    document_id: int
-    show_live: bool
-
 class TweetPredictionRequest(BaseModel):
     text: str
     author_followers_count: int
     is_blue_verified: bool
 
+# Initialize auth and include its router
+auth = Auth()
+app.include_router(auth.router)
 
 # Authentication dependency
-async def get_current_user(request: Request):
-    """Get the current authenticated user or raise 401 error."""
-    auth_header = request.headers.get('Authorization')
-    
-    if not auth_header or not auth_header.startswith('Bearer '):
-        raise HTTPException(
-            status_code=401, 
-            detail="Not authenticated",
-            headers={"WWW-Authenticate": "Bearer"}
-        )
-    
-    token = auth_header.split(' ')[1]
-    auth = Auth()
-    user = auth.get_user_by_session(token)
-    
-    if not user:
-        raise HTTPException(
-            status_code=401, 
-            detail="Invalid or expired token",
-            headers={"WWW-Authenticate": "Bearer"}
-        )
-    
-    return user
-
-# Optional authentication - doesn't raise error if not authenticated
-async def get_optional_user(request: Request):
-    """Get the current user or return None if not authenticated."""
-    try:
-        return await get_current_user(request)
-    except HTTPException:
-        return None
-
-@app.post("/auth/login")
-async def login(request: LoginRequest):
-    """Handle login request by sending magic link and code."""
-    try:
-        auth = Auth()
-        result = auth.create_login_attempt(request.email)
-        
-        # Check if result is a dictionary and contains an "error" key
-        if isinstance(result, dict) and "error" in result:
-            raise HTTPException(status_code=400, detail=result["error"])
-        
-        # If result is not a dictionary or doesn't have expected format
-        if not isinstance(result, dict) or "success" not in result:
-            raise HTTPException(status_code=500, detail="Invalid response format from authentication service")
-            
-        return result
-    except HTTPException:
-        # Re-raise HTTP exceptions as they are already formatted properly
-        raise
-    except Exception as e:
-        import traceback
-        error_traceback = traceback.format_exc()
-        logger.error(f"Error in login: {str(e)}\n{error_traceback}")
-        raise HTTPException(status_code=500, detail=str(e) or "An unknown error occurred")
-
-@app.post("/auth/verify")
-async def verify(request: VerifyRequest):
-    """Verify a login attempt using either code or magic link."""
-    try:
-        auth = Auth()
-        result = auth.verify_attempt(
-            email=request.email,
-            code=request.code,
-            magic_link_token=request.magic_link_token
-        )
-        if "error" in result:
-            raise HTTPException(status_code=400, detail=result["error"])
-        return result
-    except Exception as e:
-        logger.error(f"Error in verify: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/auth/me")
-async def get_user_data(request: Request):
-    """Get user data from session token."""
-    try:
-        auth_header = request.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith('Bearer '):
-            raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
-        
-        token = auth_header.split(' ')[1]
-        auth = Auth()
-        user = auth.get_user_by_session(token)
-        
-        if not user:
-            raise HTTPException(status_code=401, detail="Invalid session token")
-            
-        return {"user": user}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error in get_user_data: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-    
+get_current_user = auth.get_current_user
+get_optional_user = auth.get_optional_user
 
 class TweetVariationRequest(BaseModel):
     tweets: list[TweetPredictionRequest]

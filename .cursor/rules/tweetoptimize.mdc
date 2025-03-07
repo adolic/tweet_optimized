@@ -1,0 +1,5 @@
+---
+description: Any task
+globs: 
+---
+There is file called structure.txt, which contains definition of the structure of this project. Before making any changes always read this file to know how things work and to be sure not to break things. After making and relevant edits, go and update structure.txt file!

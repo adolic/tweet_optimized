@@ -1,7 +1,7 @@
 CONDA_ENV_NAME = tweet-optimize
 PYTHON_VERSION = 3.11
 
-.PHONY: setup setup-backend setup-frontend run-backend run-frontend migrate train-models train preview-data
+.PHONY: setup setup-backend setup-frontend run-backend run-frontend migrate train-models train preview-data test
 
 setup: setup-backend setup-frontend
 

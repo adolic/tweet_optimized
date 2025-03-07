@@ -7,14 +7,32 @@ import os
 from dotenv import load_dotenv
 from .database import db_query, db_query_one, db_execute
 import logging
+from fastapi import FastAPI, HTTPException, Request, Depends, APIRouter
+from pydantic import BaseModel
 
 load_dotenv()
 resend.api_key = os.getenv('RESEND_API_KEY')
+
+class LoginRequest(BaseModel):
+    email: str
+
+class VerifyRequest(BaseModel):
+    email: str
+    code: str | None = None
+    magic_link_token: str | None = None
 
 class Auth:
     def __init__(self):
         self.frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:5173')
         self.max_attempts_per_hour = 5
+        self.router = APIRouter()
+        self.setup_routes()
+
+    def setup_routes(self):
+        """Set up the FastAPI routes for authentication."""
+        self.router.post("/auth/login")(self.login_endpoint)
+        self.router.post("/auth/verify")(self.verify_endpoint)
+        self.router.get("/auth/me")(self.get_user_data_endpoint)
 
     def get_or_create_user(self, email: str) -> int:
         """Get user ID or create if doesn't exist."""
@@ -180,4 +198,92 @@ class Auth:
     def logout(self, token: str) -> bool:
         """Remove a session."""
         db_execute("DELETE FROM sessions WHERE token = %s", (token,))
-        return True 
+        return True
+
+    async def get_current_user(self, request: Request):
+        """Get the current authenticated user or raise 401 error."""
+        auth_header = request.headers.get('Authorization')
+        
+        if not auth_header or not auth_header.startswith('Bearer '):
+            raise HTTPException(
+                status_code=401, 
+                detail="Not authenticated",
+                headers={"WWW-Authenticate": "Bearer"}
+            )
+        
+        token = auth_header.split(' ')[1]
+        user = self.get_user_by_session(token)
+        
+        if not user:
+            raise HTTPException(
+                status_code=401, 
+                detail="Invalid or expired token",
+                headers={"WWW-Authenticate": "Bearer"}
+            )
+        
+        return user
+
+    async def get_optional_user(self, request: Request):
+        """Get the current user or return None if not authenticated."""
+        try:
+            return await self.get_current_user(request)
+        except HTTPException:
+            return None
+
+    async def login_endpoint(self, request: LoginRequest):
+        """Handle login request by sending magic link and code."""
+        try:
+            result = self.create_login_attempt(request.email)
+            
+            # Check if result is a dictionary and contains an "error" key
+            if isinstance(result, dict) and "error" in result:
+                raise HTTPException(status_code=400, detail=result["error"])
+            
+            # If result is not a dictionary or doesn't have expected format
+            if not isinstance(result, dict) or "success" not in result:
+                raise HTTPException(status_code=500, detail="Invalid response format from authentication service")
+                
+            return result
+        except HTTPException:
+            # Re-raise HTTP exceptions as they are already formatted properly
+            raise
+        except Exception as e:
+            import traceback
+            error_traceback = traceback.format_exc()
+            logging.error(f"Error in login: {str(e)}\n{error_traceback}")
+            raise HTTPException(status_code=500, detail=str(e) or "An unknown error occurred")
+
+    async def verify_endpoint(self, request: VerifyRequest):
+        """Verify a login attempt using either code or magic link."""
+        try:
+            result = self.verify_attempt(
+                email=request.email,
+                code=request.code,
+                magic_link_token=request.magic_link_token
+            )
+            if "error" in result:
+                raise HTTPException(status_code=400, detail=result["error"])
+            return result
+        except Exception as e:
+            logging.error(f"Error in verify: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    async def get_user_data_endpoint(self, request: Request):
+        """Get user data from session token."""
+        try:
+            auth_header = request.headers.get('Authorization')
+            if not auth_header or not auth_header.startswith('Bearer '):
+                raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
+            
+            token = auth_header.split(' ')[1]
+            user = self.get_user_by_session(token)
+            
+            if not user:
+                raise HTTPException(status_code=401, detail="Invalid session token")
+                
+            return {"user": user}
+        except HTTPException:
+            raise
+        except Exception as e:
+            logging.error(f"Error in get_user_data: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e)) 
