@@ -31,7 +31,7 @@
 
             // @ts-ignore - Google client is loaded dynamically
             window.google?.accounts.id.initialize({
-                client_id: env.PUBLIC_GOOGLE_CLIENT_ID,
+                client_id: '115335252659-83nl131ip8nc6ke7oq6j5mieiu8si8oa.apps.googleusercontent.com',
                 callback: handleGoogleResponse,
                 auto_select: false,
                 cancel_on_tap_outside: true
@@ -39,7 +39,7 @@
 
             // @ts-ignore
             window.google?.accounts.oauth2.initCodeClient({
-                client_id: env.PUBLIC_GOOGLE_CLIENT_ID,
+                client_id: '115335252659-83nl131ip8nc6ke7oq6j5mieiu8si8oa.apps.googleusercontent.com',
                 scope: 'openid email profile',
                 redirect_uri: redirectUri,
                 ux_mode: 'redirect'
