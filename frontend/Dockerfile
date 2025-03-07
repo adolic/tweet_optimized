@@ -13,6 +13,9 @@ CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
 # Build stage
 FROM base AS build
 RUN npm install
+# Copy .env file first
+COPY .env .env
+# Then copy the rest of the application
 COPY . .
 RUN npm run build
 

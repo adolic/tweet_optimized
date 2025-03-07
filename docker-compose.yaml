@@ -13,10 +13,12 @@ services:
   tweet-optimizer-frontend:
     build:
       context: ./frontend
-    ports:
-      - "3001:80"
+      args:
+        - DOCKER_BUILDKIT=1
     env_file:
       - ./frontend/.env
+    ports:
+      - "3001:80"
     depends_on:
       - tweet-optimizer-backend
     restart: unless-stopped
