@@ -7,6 +7,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     build-essential \
     libpq-dev \
+    netcat-traditional \
     && rm -rf /var/lib/apt/lists/*
 
 # Create a backend directory for proper imports
@@ -21,8 +22,13 @@ ENV PYTHONPATH=/app
 
 # Development stage
 FROM base AS development
+# Copy entrypoint script
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
 # In development, we mount the code directory, so we don't copy files here
 WORKDIR /app
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
 # Production stage

@@ -1,6 +1,19 @@
 version: "3.8"
 
 services:
+  tweet-optimizer-postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: twitter_forecast
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5467:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - tweet-optimizer-network
+
   tweet-optimizer-backend:
     build: 
       context: ./backend
@@ -13,8 +26,15 @@ services:
         target: /app/backend
     environment:
       - PYTHONPATH=/app
+      - DB_HOST=tweet-optimizer-postgres
+      - DB_PORT=5432
+      - DB_NAME=twitter_forecast
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
     env_file:
       - ./backend/.env.development
+    depends_on:
+      - tweet-optimizer-postgres
     networks:
       - tweet-optimizer-network
 
@@ -50,6 +70,10 @@ services:
       - tweet-optimizer-backend
     networks:
       - tweet-optimizer-network
+
+volumes:
+  postgres_data:
+    name: tweet-optimizer-postgres-data
 
 networks:
   tweet-optimizer-network:
