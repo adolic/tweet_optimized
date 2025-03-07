@@ -29,11 +29,13 @@ Tweet-Optimize is an application that helps users predict the performance of the
     * `migration_manager.py` - Handles database migrations
     * `migrations/` - Migration files following timestamp naming convention
     * `auth.py` - Authentication services and routes using FastAPI's APIRouter
-      * Handles login, verification, and session management
-      * Uses magic link authentication via email
-      * Rate limiting for login attempts
-      * Session token management
     * `quota.py` - User quota management
+    * `stripe_service.py` - Stripe integration service
+      * Handles subscription creation and management
+      * Processes Stripe webhooks
+      * Manages subscription status updates
+      * Handles checkout sessions
+      * Updates user quotas based on subscription changes
   * `backend/model/` - ML models for tweet performance prediction
   * `backend/scraping/` - Web scraping utilities for data collection
   * `backend/data/` - Data storage directory for models and datasets
@@ -64,6 +66,40 @@ Tweet-Optimize is an application that helps users predict the performance of the
   * Apply migrations: `make migrate cmd="up"`
   * Rollback migrations: `make migrate cmd="down"`
 
+### Development Environment
+* Docker-based development setup with hot-reloading
+* Components:
+  * PostgreSQL database:
+    * Container: `tweet-optimizer-postgres`
+    * Port: 5467 (host) -> 5432 (container)
+    * Credentials: postgres/postgres
+    * Data persisted in named volume: `postgres_data`
+  * Backend service:
+    * Container: `tweet-optimizer-backend`
+    * Port: 8001 (host) -> 8000 (container)
+    * Hot-reloading enabled
+    * Code mounted from ./backend
+    * Automatic migration running on startup
+  * Frontend service:
+    * Container: `tweet-optimizer-frontend`
+    * Port: 3001 (host) -> 5173 (container)
+    * Hot-reloading enabled
+    * Code mounted from ./frontend
+  * Nginx reverse proxy:
+    * Container: `tweet-optimizer-nginx`
+    * Port: 80
+    * Routes:
+      * / -> frontend
+      * /api/* -> backend
+      * /docs, /openapi.json -> backend
+* Development Commands:
+  * Start environment: `make dev`
+  * Stop environment: `make dev-down`
+  * View logs: `docker-compose -f docker-compose.dev.yaml logs -f`
+* Environment Files:
+  * `backend/.env.development` - Backend development configuration
+  * `frontend/.env.development` - Frontend development configuration
+
 ### Deployment & DevOps
 * Docker-based deployment with `docker-compose.yaml`
 * CI/CD scripts:
@@ -73,7 +109,6 @@ Tweet-Optimize is an application that helps users predict the performance of the
 * SSL certificates in `ssl/` directory
 * Configuration files in `conf/` directory
 * Documented deployment process in `DEPLOYMENT.md`
-
 
 ### Key Features
 * Tweet performance prediction (views, likes, retweets, comments)
@@ -93,10 +128,71 @@ Tweet-Optimize is an application that helps users predict the performance of the
 * Always create migrations through the `make migrate cmd="create name"` command to ensure proper timestamp and format
 * Training ML models: `make train-models`
 
-
 ## Important Notes
 * Environment variables are stored in `.env` files
 * Frontend communicates with backend via API endpoints defined in `backend/main.py`
 * The project uses a conda environment named `tweet-optimize` with Python 3.11
 * When making database changes, always use the migration system rather than direct schema modifications
 * The application uses OpenAI's API for generating tweet variations
+
+### Database Structure
+* Key Tables:
+  * `users` - User information and authentication
+    * `id` - Primary key
+    * `email` - User's email address
+    * `is_admin` - Admin status flag
+    * `stripe_customer_id` - Stripe customer reference
+    * `is_premium` - Premium status flag (boolean, defaults to false)
+    * `custom_instructions` - User's custom AI instructions
+    * `oauth_provider` - OAuth provider (e.g., 'google')
+    * `oauth_id` - OAuth unique identifier
+    * `picture_url` - User's profile picture URL
+    * `name` - User's display name
+  
+  * `subscription_plans` - Available subscription tiers
+    * `id` - Primary key
+    * `name` - Plan name (e.g., 'Free', 'Premium test', 'Premium')
+    * `stripe_price_id` - Live Stripe price ID
+    * `stripe_price_id_test` - Test environment Stripe price ID
+    * `description` - Plan description
+    * `monthly_quota` - Monthly prediction limit
+    * `is_active` - Plan availability status
+    * `created_at` - Creation timestamp
+  
+  * `user_subscriptions` - User subscription records
+    * `id` - Primary key
+    * `user_id` - Reference to users table
+    * `plan_id` - Reference to subscription_plans table
+    * `stripe_subscription_id` - Stripe subscription reference
+    * `status` - Subscription status
+    * `current_period_start` - Current billing period start
+    * `current_period_end` - Current billing period end
+    * `cancellation_date` - When subscription was cancelled
+    * `start_date` - When subscription began
+  
+  * `quota_usage` - User quota tracking
+    * `id` - Primary key
+    * `user_id` - Reference to users table
+    * `period_start` - Usage period start
+    * `period_end` - Usage period end
+    * `predictions_used` - Number of predictions used
+    * `predictions_limit` - Maximum predictions allowed
+    * `subscription_id` - Reference to user_subscriptions
+
+### Payment and Subscription System
+* Stripe integration managed through `backend/lib/stripe_service.py`
+* Features:
+  * Subscription creation and management
+  * Webhook processing for Stripe events
+  * Test and live environment support
+  * Automatic quota updates based on subscription status
+* Routes:
+  * POST `/subscription/create-checkout` - Create Stripe checkout session
+  * GET `/subscription/session/{session_id}` - Verify checkout session status
+  * POST `/webhooks/stripe` - Handle Stripe webhook events
+  * POST `/subscription/cancel` - Cancel active subscription
+  * POST `/subscription/reactivate` - Reactivate cancelled subscription
+* Environment Configuration:
+  * Supports both test and live Stripe environments
+  * Separate price IDs for test/live modes
+  * Configurable webhook secret and API keys

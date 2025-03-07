@@ -9,6 +9,7 @@ from .database import db_query, db_query_one, db_execute
 import logging
 from fastapi import FastAPI, HTTPException, Request, Depends, APIRouter
 from pydantic import BaseModel
+from .oauth import GoogleOAuth
 
 load_dotenv()
 resend.api_key = os.getenv('RESEND_API_KEY')
@@ -21,11 +22,15 @@ class VerifyRequest(BaseModel):
     code: str | None = None
     magic_link_token: str | None = None
 
+class GoogleLoginRequest(BaseModel):
+    token: str
+
 class Auth:
     def __init__(self):
         self.frontend_url = os.getenv('FRONTEND_URL', 'http://localhost')
         self.max_attempts_per_hour = 5
         self.router = APIRouter()
+        self.google_oauth = GoogleOAuth()
         self.setup_routes()
 
     def setup_routes(self):
@@ -33,6 +38,7 @@ class Auth:
         self.router.post("/auth/login")(self.login_endpoint)
         self.router.post("/auth/verify")(self.verify_endpoint)
         self.router.get("/auth/me")(self.get_user_data_endpoint)
+        self.router.post("/auth/google")(self.google_login_endpoint)
 
     def get_or_create_user(self, email: str) -> int:
         """Get user ID or create if doesn't exist."""
@@ -182,7 +188,8 @@ class Auth:
     def get_user_by_session(self, token: str) -> dict:
         """Get user info from session token."""
         return db_query_one("""
-            SELECT u.* FROM users u
+            SELECT u.id, u.email, u.name, u.picture_url, u.is_admin, u.is_premium 
+            FROM users u
             INNER JOIN sessions s ON s.user_id = u.id
             WHERE s.token = %s
         """, (token,))
@@ -286,4 +293,29 @@ class Auth:
             raise
         except Exception as e:
             logging.error(f"Error in get_user_data: {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    async def google_login_endpoint(self, request: GoogleLoginRequest):
+        """Handle Google OAuth login."""
+        try:
+            # Verify the Google token
+            user_info = await self.google_oauth.verify_google_token(request.token)
+            
+            # Get or create user and session
+            user_id, session_token = await self.google_oauth.get_or_create_user(user_info)
+            
+            # Get user data
+            user_data = db_query_one("""
+                SELECT email, name, picture_url, is_admin, is_premium
+                FROM users
+                WHERE id = %s
+            """, (user_id,))
+
+            return {
+                "success": True,
+                "session_token": session_token,
+                "user": user_data
+            }
+        except Exception as e:
+            logging.error(f"Error in Google login: {str(e)}")
             raise HTTPException(status_code=500, detail=str(e)) 

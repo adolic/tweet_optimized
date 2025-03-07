@@ -1,5 +1,6 @@
 import datetime
 
+
 class SimpleCache:
     def __init__(self):
         self._cache = {}

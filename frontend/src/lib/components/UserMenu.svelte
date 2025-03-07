@@ -39,6 +39,7 @@
 
     function handleLogout() {
         user.logout();
+        window.location.href = '/';
     }
     
     async function handleUpgrade() {
