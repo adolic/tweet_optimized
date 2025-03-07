@@ -26,7 +26,7 @@
                 document.head.appendChild(script);
             });
 
-            const redirectUri = 'http://localhost/auth/verify/google';
+            const redirectUri = `${env.PUBLIC_API_URL.replace('/api', '')}/auth/verify/google`;
             console.log('Initializing Google Sign-In with redirect URI:', redirectUri);
 
             // @ts-ignore - Google client is loaded dynamically
