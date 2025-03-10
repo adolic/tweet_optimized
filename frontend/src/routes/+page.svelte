@@ -4,6 +4,7 @@
 	import { user } from '$lib/stores/user';
 	import { popup, type PopupSettings, getModalStore } from '@skeletonlabs/skeleton';
 	import LoginModal from '$lib/components/LoginModal.svelte';
+	import { trackEvent } from '$lib/services/tracking';
 
 	// For the popup
 	const popupFeatures: PopupSettings = {
@@ -53,6 +54,9 @@
 
 	// Redirect to optimizer if logged in
 	onMount(async () => {
+		// Track homepage view
+		await trackEvent('Homepage View');
+		
 		// Initialize user state
 		await user.initialize();
 		

@@ -3,6 +3,7 @@ import sys
 
 from backend.generator import TweetGenerator
 from backend.lib.stripe_service import StripeService
+from backend.utils import track_event
 
 # Add the parent directory to sys.path to make 'backend' importable
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -127,6 +128,17 @@ async def get_tweet_variation(request: Request, data: TweetVariationRequest, cur
         predictions = MODEL.predict_bulk(variations, [0.1] + list(range(1, 25)))
         QuotaService.record_prediction(current_user['id'], cost=COST_PER_VARIATION)
 
+        # Track the variation generation
+        await track_event(request, "Tweet Variation Generated", {
+            "input_tweet_count": len(tweets),
+            "variations_count": len(variations),
+            "has_custom_instructions": custom_instructions is not None,
+            "author_followers_count": author_followers_count,
+            "is_blue_verified": is_blue_verified,
+            "user_id": current_user['id'],
+            "quota_remaining": quota_check['remaining'] - COST_PER_VARIATION
+        })
+
         return {
             "variations": predictions,
             "quota_remaining": quota_check['remaining'] - 10  # Subtract 10 predictions
@@ -162,6 +174,19 @@ async def get_tweet_forecast(request: Request, data: TweetPredictionRequest, cur
         QuotaService.record_prediction(
             user_id=current_user['id'],
         )
+
+        # Track the forecast
+        await track_event(request, "Tweet Forecast Generated", {
+            "tweet_length": len(text),
+            "author_followers_count": author_followers_count,
+            "is_blue_verified": is_blue_verified,
+            "user_id": current_user['id'],
+            "predicted_views_24h": prediction["views"][23],  # 24-hour prediction
+            "predicted_likes_24h": prediction["likes"][23],
+            "predicted_retweets_24h": prediction["retweets"][23],
+            "predicted_comments_24h": prediction["comments"][23],
+            "quota_remaining": quota_check['remaining'] - 1
+        })
         
         return {
             "prediction": prediction,
@@ -385,17 +410,45 @@ async def test_email(email: str):
 
 # Stripe-related routes
 @app.post("/subscription/create-checkout")
-async def create_checkout_session(current_user: dict = Depends(get_current_user)):
+async def create_checkout_session(request: Request, current_user: dict = Depends(get_current_user)):
     """Create a Stripe checkout session for the premium subscription"""
+    # Track upgrade click
+    await track_event(request, "Upgrade Clicked", {
+        "user_id": current_user['id'],
+        "email": current_user['email']
+    })
+    
     return await StripeService.create_checkout_session(
         user_id=current_user['id'],
         email=current_user['email']
     )
 
 @app.get("/subscription/session/{session_id}")
-async def get_session_status(session_id: str, current_user: dict = Depends(get_current_user)):
+async def get_session_status(session_id: str, request: Request, current_user: dict = Depends(get_current_user)):
     """Get the status of a checkout session and update the user's subscription if needed"""
-    return await StripeService.get_session_status(session_id, current_user['id'])
+    result = await StripeService.get_session_status(session_id, current_user['id'])
+    
+    # Track subscription enabled if the session was successful
+    if result.get('session', {}).get('payment_status') == 'paid':
+        subscription_data = db_query_one("""
+            SELECT sp.name as plan_name, sp.monthly_quota, us.current_period_end
+            FROM user_subscriptions us
+            JOIN subscription_plans sp ON us.plan_id = sp.id
+            WHERE us.user_id = %s AND us.status = 'active'
+            ORDER BY us.created_at DESC
+            LIMIT 1
+        """, (current_user['id'],))
+        
+        if subscription_data:
+            await track_event(request, "Subscription Enabled", {
+                "user_id": current_user['id'],
+                "email": current_user['email'],
+                "plan_name": subscription_data['plan_name'],
+                "monthly_quota": subscription_data['monthly_quota'],
+                "current_period_end": subscription_data['current_period_end'].isoformat() if subscription_data['current_period_end'] else None
+            })
+    
+    return result
 
 @app.post("/webhooks/stripe")
 async def stripe_webhook(request: Request):
@@ -413,3 +466,48 @@ async def cancel_subscription(current_user: dict = Depends(get_current_user)):
 async def reactivate_subscription(current_user: dict = Depends(get_current_user)):
     """Reactivate a cancelled subscription"""
     return await StripeService.reactivate_subscription(current_user['id'])
+
+@app.post("/track/homepage-view")
+async def track_homepage_view(request: Request):
+    await track_event(request, "Homepage View")
+    return {"status": "success"}
+
+@app.post("/track/login-modal-opened")
+async def track_login_modal_opened(request: Request):
+    await track_event(request, "Login Modal Opened")
+    return {"status": "success"}
+
+@app.post("/track/email-login-sent")
+async def track_email_login_sent(request: Request):
+    await track_event(request, "Email Login Sent")
+    return {"status": "success"}
+
+@app.post("/track/oauth-google-clicked")
+async def track_oauth_google_clicked(request: Request):
+    await track_event(request, "OAuth Google Clicked")
+    return {"status": "success"}
+
+@app.post("/track/login-success")
+async def track_login_success(request: Request):
+    await track_event(request, "Login Success")
+    return {"status": "success"}
+
+@app.post("/track/tweet-variation-generated")
+async def track_tweet_variation_generated(request: Request):
+    await track_event(request, "Tweet Variation Generated")
+    return {"status": "success"}
+
+@app.post("/track/tweet-forecast-generated")
+async def track_tweet_forecast_generated(request: Request):
+    await track_event(request, "Tweet Forecast Generated")
+    return {"status": "success"}
+
+@app.post("/track/upgrade-clicked")
+async def track_upgrade_clicked(request: Request):
+    await track_event(request, "Upgrade Clicked")
+    return {"status": "success"}
+
+@app.post("/track/subscription-enabled")
+async def track_subscription_enabled(request: Request):
+    await track_event(request, "Subscription Enabled")
+    return {"status": "success"}

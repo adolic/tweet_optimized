@@ -2,6 +2,8 @@
     import { getModalStore } from '@skeletonlabs/skeleton';
     import { env } from '$env/dynamic/public';
     import { user } from '$lib/stores/user';
+    import { onMount } from 'svelte';
+    import { trackEvent } from '$lib/services/tracking';
 
     const modalStore = getModalStore();
 
@@ -13,6 +15,12 @@
     // Initialize Google Sign-In
     let googleInitialized = false;
     
+    // Track modal open
+    onMount(async () => {
+        await trackEvent('Login Modal Opened');
+        initializeGoogle();
+    });
+
     async function initializeGoogle() {
         if (googleInitialized) return;
         
@@ -42,8 +50,17 @@
                 client_id: '115335252659-83nl131ip8nc6ke7oq6j5mieiu8si8oa.apps.googleusercontent.com',
                 scope: 'openid email profile',
                 redirect_uri: redirectUri,
-                ux_mode: 'redirect'
+                ux_mode: 'redirect',
+                select_account: true
             });
+
+            // Create a click handler for the Google button
+            const googleButton = document.getElementById('google-signin');
+            if (googleButton) {
+                googleButton.addEventListener('click', async () => {
+                    await trackEvent('OAuth Google Clicked');
+                });
+            }
 
             // @ts-ignore
             window.google?.accounts.id.renderButton(
@@ -73,6 +90,8 @@
             loading = true;
             error = null;
             
+            await trackEvent('OAuth Google Clicked');
+            
             const apiResponse = await fetch(`${env.PUBLIC_API_URL}/auth/google`, {
                 method: 'POST',
                 headers: {
@@ -88,6 +107,7 @@
             }
 
             if (data.session_token) {
+                await trackEvent('Login Success', { method: 'google' });
                 await user.setSessionToken(data.session_token);
                 modalStore.close();
                 window.location.href = '/optimizer';
@@ -113,6 +133,7 @@
         success = null;
 
         try {
+            await trackEvent('Email Login Sent');
             const response = await fetch(`${env.PUBLIC_API_URL}/auth/login`, {
                 method: 'POST',
                 headers: {
@@ -126,6 +147,7 @@
             if (data.error) {
                 error = data.error;
             } else {
+                await trackEvent('Login Success', { method: 'email', email });
                 success = `We've sent a login link to ${email}. Please check your email to continue.`;
                 email = '';
             }
@@ -139,12 +161,6 @@
     function closeModal() {
         modalStore.close();
     }
-
-    // Initialize Google Sign-In when component mounts
-    import { onMount } from 'svelte';
-    onMount(() => {
-        initializeGoogle();
-    });
 </script>
 
 <div class="card p-4 w-modal shadow-xl">

@@ -3,6 +3,7 @@
     import { env } from '$env/dynamic/public';
     import { onMount } from 'svelte';
     import { user } from '$lib/stores/user';
+    import { trackEvent } from '$lib/services/tracking';
 
     let loading = true;
     let error: string | null = null;
@@ -43,6 +44,7 @@
             
             // Only update user state if verification was successful
             if (data.success && data.session_token) {
+                await trackEvent('Login Success', { method: 'email_verification', email });
                 await user.setSessionToken(data.session_token);
                 // Use window.location.href for a full page refresh
                 window.location.href = '/optimizer';
