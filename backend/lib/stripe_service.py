@@ -19,7 +19,7 @@ class StripeService:
         """Create a Stripe checkout session for the premium subscription"""
         try:
             # Get premium plan ID
-            field = 'stripe_price_id_test' if ENV == 'test' else 'stripe_price_id'
+            field = 'stripe_price_id_test' if ENV == 'development' else 'stripe_price_id'
             premium_plan = db_query_one(f"SELECT id, {field}, monthly_quota FROM subscription_plans WHERE name = 'Premium'")
             if not premium_plan:
                 raise HTTPException(status_code=404, detail="Premium plan not found")

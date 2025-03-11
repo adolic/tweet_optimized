@@ -7,7 +7,7 @@ def up():
     CREATE INDEX IF NOT EXISTS idx_users_stripe_customer_id ON users(stripe_customer_id);
     
     -- Update Stripe price ID for Premium plan
-    UPDATE subscription_plans SET stripe_price_id = 'price_1QyaElAcJbcSLyjgqaXE1XsH' WHERE name = 'Premium';
+    UPDATE subscription_plans SET stripe_price_id = 'price_1QyikBA1QxFNSmoO7kWKutym' WHERE name = 'Premium';
     """
 
 def down():
