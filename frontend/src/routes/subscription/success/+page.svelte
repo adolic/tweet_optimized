@@ -1,8 +1,15 @@
-<script>
+<script lang="ts">
     import { onMount } from 'svelte';
     import { goto } from '$app/navigation';
     import { env } from '$env/dynamic/public';
     import { page } from '$app/stores';
+    
+    // TypeScript declaration for Twitter tracking
+    declare global {
+        interface Window {
+            twq?: (command: string, event: string, params?: object) => void;
+        }
+    }
     
     const API_URL = typeof env !== 'undefined' ? env.PUBLIC_API_URL : 'http://localhost:8000';
     let upgradeStatus = '';
@@ -49,6 +56,13 @@
                 
                 // Refresh quota data
                 await refreshUserQuota();
+                
+                // Track successful subscription with Twitter
+                if (typeof window !== 'undefined' && window.twq) {
+                    window.twq('event', 'tw-p98sp-p98sq', {
+                        value: 20.00  // Monthly subscription value
+                    });
+                }
                 
                 upgradeStatus = 'Subscription activated successfully!';
                 return true;
