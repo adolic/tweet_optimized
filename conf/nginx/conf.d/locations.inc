@@ -39,7 +39,4 @@ location / {
     # Extended WebSocket timeout
     proxy_read_timeout 300s;
     proxy_connect_timeout 75s;
-
-    # Include security headers
-    include /etc/nginx/conf.d/security_headers.conf;
 } 
