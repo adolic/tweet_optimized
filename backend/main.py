@@ -1,6 +1,7 @@
 import os
 import sys
 
+from backend.constants import FREE_QUOTA
 from backend.generator import TweetGenerator
 from backend.lib.stripe_service import StripeService
 from backend.utils import track_event
@@ -277,7 +278,7 @@ async def get_user_quota(
             now = datetime.now()
             
             # Determine monthly quota (free plan if no subscription)
-            monthly_quota = stats.get('monthly_quota') if stats else 5  # Default to 5 for free plan
+            monthly_quota = stats.get('monthly_quota') if stats else FREE_QUOTA  # Default to 5 for free plan
             
             # Create the quota period
             period_start = now
@@ -317,7 +318,7 @@ async def get_user_quota(
                 'plan_id': stats.get('plan_id'),
                 'plan_name': 'Free' if not stats.get('subscription_id') else stats.get('plan_name'),
                 'description': stats.get('plan_description'),
-                'monthly_quota': stats.get('monthly_quota', 5),  # Default to 5 for free plan
+                'monthly_quota': stats.get('monthly_quota', FREE_QUOTA),  # Default to 5 for free plan
                 'current_period_start': stats.get('current_period_start'),
                 'current_period_end': stats.get('current_period_end'),
                 'cancellation_date': stats.get('cancellation_date')

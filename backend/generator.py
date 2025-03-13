@@ -6,10 +6,19 @@ from bs4 import BeautifulSoup
 
 
 class TweetGenerator:
-    def __init__(self):
-        self.client = OpenAI(
-            api_key=os.getenv("OPENAI_API_KEY")
-        )
+    def __init__(self, provider: str = "openai"):
+        if provider == "openai":
+            self.client = OpenAI(
+                api_key=os.getenv("OPENAI_API_KEY")
+            )
+            self.model = "gpt-4o"
+        elif provider == "deepseek":
+            self.client = OpenAI(
+                base_url="https://api.deepseek.com",
+                api_key=os.getenv("DEEPSEEK_API_KEY")
+            )
+            # self.model = "deepseek-reasoner"
+            self.model = "deepseek-chat"
 
     def generate_tweets(self, tweets: list[str], custom_instructions: str = "") -> list[str]:
         tweets_str = "\n".join([f"<tweet>{tweet}</tweet>" for tweet in tweets])
@@ -17,12 +26,13 @@ class TweetGenerator:
         system_prompt = Ref.system_prompt.format(custom_instructions=custom_inst_prompt)
         tweet_prompt = Ref.tweet_prompt.format(tweets=tweets_str)
         response = self.client.chat.completions.create(
-            model="gpt-4o",
+            model=self.model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": tweet_prompt}
             ],
             max_completion_tokens=2048,
+            stream=False
         )
         soup = BeautifulSoup(response.choices[0].message.content, "html.parser")
         tweets = soup.find_all("tweet")
